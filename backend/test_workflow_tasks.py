@@ -443,6 +443,56 @@ def test_refresh_marks_unknown_when_absent_from_queue_and_history(client, monkey
     assert record["last_error"]
 
 
+def test_refresh_marks_stalled_missing_task_failed(client, monkeypatch):
+    test_client, _ = client
+    workflow_id = _submit_one(test_client, monkeypatch)
+
+    monkeypatch.setattr(
+        workflow_api.comfy_client,
+        "fetch_task_states",
+        lambda url: {
+            "online": True,
+            "error": None,
+            "running": [],
+            "pending": [],
+            "history": {},
+        },
+    )
+    monkeypatch.setattr(workflow_api.comfy_tasks, "is_stalled", lambda record, now=None: True)
+
+    body = test_client.get(
+        f"/api/workflows/{workflow_id}/tasks?refresh=true", headers=AUTH
+    ).json()
+    record = body["items"][0]
+    assert record["status"] == "failed"
+    assert "重启 ComfyUI" in record["last_error"]
+
+
+def test_refresh_marks_stalled_running_task_failed(client, monkeypatch):
+    test_client, _ = client
+    workflow_id = _submit_one(test_client, monkeypatch)
+
+    monkeypatch.setattr(
+        workflow_api.comfy_client,
+        "fetch_task_states",
+        lambda url: {
+            "online": True,
+            "error": None,
+            "running": ["prompt-1"],
+            "pending": [],
+            "history": {},
+        },
+    )
+    monkeypatch.setattr(workflow_api.comfy_tasks, "is_stalled", lambda record, now=None: True)
+
+    body = test_client.get(
+        f"/api/workflows/{workflow_id}/tasks?refresh=true", headers=AUTH
+    ).json()
+    record = body["items"][0]
+    assert record["status"] == "failed"
+    assert "卡死" in record["last_error"]
+
+
 def test_refresh_offline_keeps_local_status(client, monkeypatch):
     test_client, _ = client
     workflow_id = _submit_one(test_client, monkeypatch)

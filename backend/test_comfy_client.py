@@ -155,3 +155,51 @@ def test_release_unreachable_ollama_skips_unload(monkeypatch):
     assert result["ollama_reachable"] is False
     assert result["ollama_stopped"] == []
     assert result["ollama_still_resident"] == []
+
+
+def test_queue_ids_read_prompt_id_from_second_slot():
+    # ComfyUI queue entry: [index, prompt_id, prompt, ...]; the id must come
+    # from slot 1, not the numeric queue position in slot 0.
+    entries = [
+        [0, "pid-alpha", {"nodes": []}],
+        [1, "pid-beta", {"nodes": []}],
+    ]
+    assert comfy_client._queue_ids(entries) == ["pid-alpha", "pid-beta"]
+
+
+def test_queue_ids_falls_back_to_first_slot_when_string():
+    # Older/alternate layouts that already carry the id in slot 0.
+    assert comfy_client._queue_ids([["pid-only", {}]]) == ["pid-only"]
+
+
+def test_queue_ids_ignores_malformed_entries():
+    assert comfy_client._queue_ids(None) == []
+    assert comfy_client._queue_ids("not-a-list") == []
+    assert comfy_client._queue_ids([[], [3], [0, 42, {}], [None, "pid-ok"]]) == ["pid-ok"]
+
+
+def test_min_vram_floor_without_latent_node():
+    assert comfy_client.min_vram_required({"1": {"class_type": "CheckpointLoaderSimple"}}) == (
+        comfy_client.VRAM_FREE_MIN_BYTES
+    )
+    assert comfy_client.min_vram_required(None) == comfy_client.VRAM_FREE_MIN_BYTES
+
+
+def test_min_vram_large_for_sdxl_class_latent():
+    prompt = {
+        "3": {
+            "class_type": "EmptyLatentImage",
+            "inputs": {"width": 704, "height": 1024},
+        }
+    }
+    assert comfy_client.min_vram_required(prompt) == comfy_client.VRAM_FREE_LARGE_BYTES
+
+
+def test_min_vram_base_for_small_latent():
+    prompt = {
+        "3": {
+            "class_type": "EmptyLatentImage",
+            "inputs": {"width": 512, "height": 768},
+        }
+    }
+    assert comfy_client.min_vram_required(prompt) == comfy_client.VRAM_FREE_MIN_BYTES

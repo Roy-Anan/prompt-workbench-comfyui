@@ -1,3 +1,4 @@
+import copy
 import json
 import pytest
 from workflow_service import (
@@ -758,7 +759,9 @@ def test_draft_update_rejects_duplicate_name_and_missing(tmp_path):
 def test_draft_recycle_bin_and_isolation_between_workflows(tmp_path):
     store = WorkflowStore(tmp_path / "workflows")
     first = store.import_workflow("a.json", sample_api_workflow())
-    second = store.import_workflow("b.json", sample_api_workflow())
+    second_source = copy.deepcopy(sample_api_workflow())
+    second_source["1"]["inputs"]["text"] = "other positive"
+    second = store.import_workflow("b.json", second_source)
 
     draft = store.save_draft(
         first["id"], None, "草稿一", "positive", None, ""
@@ -786,6 +789,25 @@ def test_draft_recycle_bin_and_isolation_between_workflows(tmp_path):
 
     with pytest.raises(WorkflowError, match="草稿不存在"):
         store.purge_draft(first["id"], draft["id"])
+
+
+def test_import_same_workflow_is_deduplicated_by_fingerprint(tmp_path):
+    store = WorkflowStore(tmp_path / "workflows")
+    first = store.import_workflow("same.json", sample_api_workflow())
+    second = store.import_workflow("same.json", sample_api_workflow())
+
+    assert second["id"] == first["id"]
+    assert second["duplicate"] is True
+    assert first.get("duplicate") is not True
+    assert len(store.list_workflows()) == 1
+
+    # A changed workflow produces a separate record.
+    changed = copy.deepcopy(sample_api_workflow())
+    changed["1"]["inputs"]["text"] = "changed positive"
+    third = store.import_workflow("changed.json", changed)
+    assert third["id"] != first["id"]
+    assert third.get("duplicate") is not True
+    assert len(store.list_workflows()) == 2
 
 
 def test_draft_rejects_empty_prompt_and_blank_name(tmp_path):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import os
@@ -16,7 +17,8 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request as UrlRequest, urlopen
 
-from fastapi import FastAPI, HTTPException, Request
+import websockets
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -794,8 +796,16 @@ def _queue_ids(items: Any) -> list[str]:
     if not isinstance(items, list):
         return ids
     for item in items:
-        if isinstance(item, list) and item and isinstance(item[0], str):
-            ids.append(item[0])
+        if not isinstance(item, list) or not item:
+            continue
+        # ComfyUI queue entry: [index, prompt_id, prompt, ...]; id in slot 1.
+        prompt_id: Any = None
+        if len(item) > 1 and isinstance(item[1], str):
+            prompt_id = item[1]
+        elif isinstance(item[0], str):
+            prompt_id = item[0]
+        if isinstance(prompt_id, str) and prompt_id:
+            ids.append(prompt_id)
     return ids
 
 
@@ -1020,6 +1030,67 @@ def comfyui_status():
 def comfyui_queue():
     settings = load_settings()
     return fetch_comfyui_queue(settings["connections"]["comfyui_url"])
+
+
+def _comfy_ws_target(http_url: str) -> str:
+    base = http_url.strip()
+    if base.startswith("https://"):
+        base = "wss://" + base[len("https://"):]
+    elif base.startswith("http://"):
+        base = "ws://" + base[len("http://"):]
+    return base.rstrip("/") + "/ws?clientId=workbench"
+
+
+@app.websocket("/api/comfyui/ws")
+async def comfyui_ws_proxy(websocket: WebSocket):
+    """Proxy the ComfyUI progress WebSocket through the workbench origin.
+
+    The browser connects same-origin to the workbench; the backend opens the
+    upstream ComfyUI socket server-side, so no cross-port Origin header reaches
+    ComfyUI's origin middleware (the loopback 403s disappear). Frames are
+    forwarded both ways; HTTP polling remains the fallback if the socket drops.
+    """
+    try:
+        settings = load_settings()
+        target = _comfy_ws_target(settings["connections"]["comfyui_url"])
+    except Exception:
+        await websocket.close(code=1011)
+        return
+
+    await websocket.accept()
+    try:
+        async with websockets.connect(target, max_size=None, open_timeout=5) as upstream:
+            async def forward_client_to_upstream() -> None:
+                try:
+                    while True:
+                        message = await websocket.receive_text()
+                        await upstream.send(message)
+                except (WebSocketDisconnect, RuntimeError, OSError, ConnectionError):
+                    return
+
+            async def forward_upstream_to_client() -> None:
+                try:
+                    async for message in upstream:
+                        await websocket.send_text(message)
+                except (RuntimeError, OSError, ConnectionError):
+                    return
+
+            tasks = [
+                asyncio.create_task(forward_client_to_upstream()),
+                asyncio.create_task(forward_upstream_to_client()),
+            ]
+            _done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @app.get("/api/history")

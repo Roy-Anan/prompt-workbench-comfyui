@@ -1,6 +1,7 @@
 from __future__ import annotations
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from fastapi import APIRouter, HTTPException
@@ -697,18 +698,31 @@ def _submit_guarded(
 
     vram = comfy_client.probe_vram_free(comfyui_url)
     if not vram["online"] or vram["vram_free"] is None:
+        if vram.get("reachable"):
+            vram_error = (
+                "ComfyUI 在线但显存接口异常（可能显存不足或进程卡死），"
+                "未提交任务；建议重启 ComfyUI 后再试。"
+            )
+        else:
+            vram_error = "无法确认显存空闲（ComfyUI 未启动或不可达），未提交任务。"
         raise HTTPException(
             status_code=502,
-            detail={"online": False, "error": "无法确认显存空闲，未提交任务。"},
+            detail={"online": False, "reachable": vram.get("reachable"), "error": vram_error},
         )
-    if vram["vram_free"] < comfy_client.VRAM_FREE_MIN_BYTES:
+    try:
+        working_preview = store().read_working(workflow_id)
+    except (WorkflowError, FileNotFoundError, OSError):
+        working_preview = {}
+    vram_required = comfy_client.min_vram_required(working_preview)
+    if vram["vram_free"] < vram_required:
         free_gb = vram["vram_free"] / 1024 ** 3
+        need_gb = vram_required / 1024 ** 3
         raise HTTPException(
             status_code=409,
             detail={
                 "online": True,
                 "vram_free": vram["vram_free"],
-                "error": f"显存空闲不足 5GB（当前约 {free_gb:.1f}GB），请释放显存后再提交。",
+                "error": f"显存空闲不足 {need_gb:.0f}GB（当前约 {free_gb:.1f}GB），请释放显存后再提交。",
             },
         )
 
@@ -849,11 +863,24 @@ def list_tasks(workflow_id: str, refresh: bool = False):
             if not states["online"]:
                 sync_error = states["error"]
             else:
+                now = datetime.now(timezone.utc)
                 for record in items:
                     pid = record["prompt_id"]
                     if pid in states["running"]:
-                        comfy_tasks.update_status(connection, pid, "running")
-                        generation_history.update_task_status(connection, pid, "running")
+                        if comfy_tasks.is_stalled(record, now):
+                            stalled_msg = (
+                                "任务长时间停留在运行中，可能显存不足或采样卡死；"
+                                "建议中断后重启 ComfyUI 再重试。"
+                            )
+                            comfy_tasks.update_status(
+                                connection, pid, "failed", last_error=stalled_msg
+                            )
+                            generation_history.update_task_status(
+                                connection, pid, "failed", last_error=stalled_msg
+                            )
+                        else:
+                            comfy_tasks.update_status(connection, pid, "running")
+                            generation_history.update_task_status(connection, pid, "running")
                     elif pid in states["pending"]:
                         comfy_tasks.update_status(connection, pid, "submitted")
                         generation_history.update_task_status(connection, pid, "submitted")
@@ -875,19 +902,31 @@ def list_tasks(workflow_id: str, refresh: bool = False):
                                 entry.get("outputs")
                             )
                             generation_history.attach_images(connection, pid, images)
-                    elif record["status"] in ("submitted", "running"):
-                        comfy_tasks.update_status(
-                            connection,
-                            pid,
-                            "unknown",
-                            last_error="队列与历史均未找到该任务",
-                        )
-                        generation_history.update_task_status(
-                            connection,
-                            pid,
-                            "unknown",
-                            last_error="队列与历史均未找到该任务",
-                        )
+                    elif record["status"] in ("submitted", "running", "unknown"):
+                        if comfy_tasks.is_stalled(record, now):
+                            stalled_msg = (
+                                "任务长时间未完成且不在队列/历史中，可能显存不足或进程卡死；"
+                                "建议重启 ComfyUI 后重试。"
+                            )
+                            comfy_tasks.update_status(
+                                connection, pid, "failed", last_error=stalled_msg
+                            )
+                            generation_history.update_task_status(
+                                connection, pid, "failed", last_error=stalled_msg
+                            )
+                        else:
+                            comfy_tasks.update_status(
+                                connection,
+                                pid,
+                                "unknown",
+                                last_error="队列与历史均未找到该任务",
+                            )
+                            generation_history.update_task_status(
+                                connection,
+                                pid,
+                                "unknown",
+                                last_error="队列与历史均未找到该任务",
+                            )
                 items = comfy_tasks.list_for_workflow(connection, workflow_id)
 
         return {"items": items, "sync_error": sync_error}

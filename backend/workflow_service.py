@@ -744,9 +744,21 @@ class WorkflowStore:
             raise WorkflowError("工作流文件超过 20 MB 限制")
         workflow_format = detect_format(workflow)
         report = analyze_workflow(workflow)
+        source_hash = fingerprint(workflow)
+        existing = self._find_by_fingerprint(source_hash)
+        if existing is not None:
+            # Same source content already imported: reuse the existing record
+            # instead of creating a second confirmed copy of the same workflow.
+            return {
+                "id": existing.get("id"),
+                "filename": existing.get("filename"),
+                "format": existing.get("format"),
+                "source_fingerprint": source_hash,
+                "report": report,
+                "duplicate": True,
+            }
         workflow_id = str(uuid.uuid4())
         folder = self._folder(workflow_id)
-        source_hash = fingerprint(workflow)
         manifest = {
             "id": workflow_id,
             "filename": _safe_filename(filename),
@@ -774,6 +786,22 @@ class WorkflowStore:
             "source_fingerprint": source_hash,
             "report": report,
         }
+
+    def _find_by_fingerprint(self, source_hash: str) -> dict[str, Any] | None:
+        for folder in self.root.iterdir():
+            if not folder.is_dir():
+                continue
+            manifest_file = folder / "manifest.json"
+            if not manifest_file.is_file():
+                continue
+            try:
+                manifest = _read_json(manifest_file)
+            except WorkflowError:
+                continue
+            if manifest.get("source_fingerprint") == source_hash:
+                return manifest
+        return None
+
     def list_workflows(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for folder in self.root.iterdir():

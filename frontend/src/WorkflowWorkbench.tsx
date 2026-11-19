@@ -83,6 +83,7 @@ type ImportResult = {
   filename: string;
   format: "api" | "ui";
   report: Analysis;
+  duplicate?: boolean;
 };
 type WriteResult = {
   ok: boolean;
@@ -821,6 +822,13 @@ export default function WorkflowWorkbench({
           workflow: parsed,
         },
       );
+      if (result.duplicate) {
+        // Same source content already exists: reopen the original record
+        // instead of resetting its confirmed prompts, drafts or whitelist.
+        await openWorkflow(result.id);
+        setMessage(`该工作流已存在，已打开原有记录：${result.filename}`);
+        return;
+      }
       setWorkflowId(result.id);
       setCompare(null);
       setRoles(initialRoles(result.report));
@@ -1322,12 +1330,11 @@ export default function WorkflowWorkbench({
     let disposed = false;
     let socket: WebSocket | null = null;
 
-    const wsBase = comfyuiUrl
-      .trim()
-      .replace(/^http:/i, "ws:")
-      .replace(/^https:/i, "wss:")
-      .replace(/\/+$/, "");
-    const wsUrl = `${wsBase}/ws?clientId=workbench`;
+    // Connect through the workbench's own WS proxy (same origin) instead of
+    // opening ComfyUI's port directly; the backend forwards to ComfyUI so the
+    // browser never sends a cross-port Origin that ComfyUI rejects with 403.
+    const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${wsScheme}://${window.location.host}/api/comfyui/ws?clientId=workbench`;
 
     function scheduleReconnect() {
       if (disposed) return;

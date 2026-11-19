@@ -17,6 +17,10 @@ APP_MARKER = "ComfyUI-Prompt-Workbench"
 # R118: minimum free VRAM required before a guarded submit, 5 GiB.
 # A probe that cannot read a free figure fails closed (unknown -> reject).
 VRAM_FREE_MIN_BYTES = 5 * 1024 ** 3
+# Larger latent (SDXL-class, ~704x1024 and up) peaks higher on an 8 GB card,
+# so keep a wider headroom before submit.
+VRAM_FREE_LARGE_BYTES = 6 * 1024 ** 3
+_LARGE_LATENT_PIXELS = 704 * 1024
 
 
 def _post_json(
@@ -83,8 +87,19 @@ def _queue_ids(items: Any) -> list[str]:
     if not isinstance(items, list):
         return ids
     for item in items:
-        if isinstance(item, list) and item and isinstance(item[0], str):
-            ids.append(item[0])
+        if not isinstance(item, list) or not item:
+            continue
+        # ComfyUI queue entry: ``[index, prompt_id, prompt, ...]``.
+        # The prompt_id lives at index 1; index 0 is the numeric queue
+        # position. Fall back to index 0 only if it already carries a string
+        # identifier (older/alternate layouts).
+        prompt_id: Any = None
+        if len(item) > 1 and isinstance(item[1], str):
+            prompt_id = item[1]
+        elif isinstance(item[0], str):
+            prompt_id = item[0]
+        if isinstance(prompt_id, str) and prompt_id:
+            ids.append(prompt_id)
     return ids
 
 
@@ -141,6 +156,39 @@ def fetch_task_states(
     }
 
 
+def _latent_pixel_count(prompt_api: Any) -> int | None:
+    """Sum width*height from latent-size nodes; None when not derivable."""
+    if not isinstance(prompt_api, dict):
+        return None
+    total: int | None = None
+    for node in prompt_api.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "")
+        if "Latent" not in class_type:
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        width = inputs.get("width")
+        height = inputs.get("height")
+        if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+            total = (total or 0) + width * height
+    return total
+
+
+def min_vram_required(prompt_api: Any) -> int:
+    """Conservative free-VRAM floor for a submit, scaled by latent size.
+
+    SDXL-class large latents peak higher on an 8 GB card; workflows without a
+    readable latent size fall back to the base floor.
+    """
+    pixels = _latent_pixel_count(prompt_api)
+    if pixels is not None and pixels >= _LARGE_LATENT_PIXELS:
+        return VRAM_FREE_LARGE_BYTES
+    return VRAM_FREE_MIN_BYTES
+
+
 def queue_has_active_task(
     comfyui_url: str,
     timeout: float = 2.5,
@@ -177,11 +225,16 @@ def probe_vram_free(
     fails closed instead of guessing. With multiple devices the conservative
     minimum free figure is reported.
     """
-    data, error, _reachable = _get_json(
+    data, error, reachable = _get_json(
         comfyui_url.rstrip("/") + "/system_stats", timeout
     )
     if data is None:
-        return {"online": False, "vram_free": None, "error": error}
+        return {
+            "online": False,
+            "reachable": reachable,
+            "vram_free": None,
+            "error": error,
+        }
     devices = data.get("devices")
     free_values: list[int] = []
     if isinstance(devices, list):
@@ -192,9 +245,10 @@ def probe_vram_free(
             if isinstance(vram_free, int) and vram_free >= 0:
                 free_values.append(vram_free)
     if not free_values:
-        return {"online": True, "vram_free": None, "error": "缺少显存空闲字段"}
+        return {"online": True, "reachable": True, "vram_free": None, "error": "缺少显存空闲字段"}
     return {
         "online": True,
+        "reachable": True,
         "vram_free": min(free_values),
         "error": None,
     }

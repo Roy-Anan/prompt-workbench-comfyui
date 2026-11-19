@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+# A task still active (or missing) this long after submission, with no
+# terminal history entry, is treated as stalled rather than left hanging on
+# ``unknown``. Kept conservative so a slow low-VRAM sampling run is not
+# killed prematurely.
+STALL_TIMEOUT = timedelta(minutes=15)
 
 VALID_STATUSES = (
     "submitted",
@@ -168,3 +174,28 @@ def update_status(
         ),
     )
     connection.commit()
+
+
+def _parse_submitted_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def is_stalled(record: dict[str, Any], now: datetime | None = None) -> bool:
+    """True when an in-flight record has exceeded the stall timeout.
+
+    Malformed or missing timestamps do not count as stalled; reconciliation
+    keeps the conservative previous status instead.
+    """
+    submitted = _parse_submitted_at(record.get("submitted_at"))
+    if submitted is None:
+        return False
+    current = now or datetime.now(timezone.utc)
+    return current - submitted > STALL_TIMEOUT
