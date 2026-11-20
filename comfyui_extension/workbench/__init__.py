@@ -36,4 +36,13 @@ def _load(module_name: str, file_name: str) -> None:
 _load("workbench_rules_node", "rules_node.py")
 _load("workbench_release_node", "release_node.py")
 
+# Register the local read-only proxy routes (no-op when the ComfyUI server
+# module is unavailable, e.g. under plain pytest collection).
+try:
+    import proxy
+
+    proxy.register_routes()
+except Exception:
+    pass
+
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

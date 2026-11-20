@@ -3825,4 +3825,43 @@
 - 复用侧现成节点清单已落档 `comfyui_extension/README.md`：高优先 Lora-Auto-Trigger-Words、Unload-Model；中/可选 Lora-Manager、TriggerDB、FindingLora；通用 LLM 对话节点、提示词收藏插件、成品画廊不装（自建或内置已覆盖）。本机 custom_nodes 经核对未装同类插件。
 - **2026-11-20 已安装两个高优先插件**（clone 到整合包 `ComfyUI/custom_nodes/`，不进工作台仓库）：`idrirap/ComfyUI-Lora-Auto-Trigger-Words`（仅依赖 `requests`，整合包 Python 3.13.11 已带 2.32.5，无需 pip）、`SeanScripts/ComfyUI-Unload-Model`（纯 Python/Torch 无依赖）。真机起 ComfyUI v0.30.2 验收：object_info 出现 `LoraLoaderVanilla/StackedVanilla/Advanced/TagsOnly` 与 `UnloadModel/UnloadAllModels`，日志 0.0 秒干净加载无 Traceback；工作台两节点仍在。验收后已停止进程，8188 释放，显存回落约 39MiB。
 
+### 158. 扩展插件收口 + 侧边栏只读代理与分区摘要（2026-11-20）
+
+#### 158.1 现成插件安装与真机验收收口
+
+- `willmiao/ComfyUI-Lora-Manager`（HEAD 64055bcf）：clone 到整合包 `custom_nodes`；整合包 Python 补装缺失依赖 olefile/natsort/aiosqlite/brotli 并复核 import。真机 object_info 共 **22 个节点**注册成功（节点 NAME 含中文括号与空格，如 `Lora Loader (LoraManager)`，不能按 LM 后缀匹配）；前端目录 `web/comfyui/` 经 `/extensions/ComfyUI-Lora-Manager/autocomplete.js` 下发 200；启动日志无 Traceback/ERROR/Exception/ImportError/ModuleNotFound。
+- `shootthesound/comfyui-lora-FindingLora`（HEAD 027d60ed）：纯标准库/Comfy 内部依赖、无 requirements；真机 `LoraLoaderFindingLora` 节点注册成功，日志干净。
+- `benstaniford/comfy-lora-loader-with-triggerdb`（TriggerDB）：`git ls-remote` 404、GitHub API 作者名下无公开匹配仓，判定上游下架/私有，作为可选项跳过，README 标注"上游 404 不可得"；触发词能力由 Auto-Trigger-Words 与 FindingLora 覆盖。
+- 验收口径注意：PowerShell `Invoke-RestMethod` 解析大 JSON 后 `.PSObject.Properties.Count` 会误报为 1，节点键名必须在原始响应文本上用正则提取。
+
+#### 158.2 后端聚合脱敏只读端点
+
+- 新增 `backend/sidebar_summary.py`：`build_summary(data_root, settings)` 按六域（rules/workflows/drafts/assets/loras/history）投影，每域独立 try/except 降级，每域最多 20 条并附 `total`；剥离 Prompt 正文、草稿备注、环境快照、本地绝对路径、图片清单。
+- `main.py` 挂 `GET /api/sidebar/summary`（模块别名 `sidebar_summary_module`，避免与端点函数名冲突）；不在 `PUBLIC_READONLY_PATHS`，走既有鉴权（cookie/bearer/node token），node token 对 GET 放行、写方法 403。
+- 测试 `backend/test_sidebar_summary.py` 6 例：401 拒绝、node token 200、空域 total=0、脱敏不含草稿备注/历史正文、截断 21 条只回 20、node POST 403。
+
+#### 158.3 扩展本地只读代理
+
+- 新增 `comfyui_extension/workbench/proxy.py`：`PROXY_ROUTES` 白名单（health/overview/sidebar-summary），`backend_path_for(suffix)` 判定，`forward(backend_path, base_url)` 用标准库 urllib 带 node token 转发、失败降级 502 JSON；`register_routes()` 从 `server.PromptServer` 取实例路由注册。`__init__.py` 末尾 try/except 调用，注册失败静默不影响节点加载。
+- 测试 `backend/test_extension_proxy.py` 4 例：白名单映射、未知 suffix 拒绝、离线 502、无 server 模块 `register_routes` 返回 False。
+- 面板 `web/workbench_panel.js` 升级：优先同源代理 `/workbench-api/*`，代理不可达回退直连后端 health/overview 壳；分区折叠展示规则/草稿/素材/LoRA/历史摘要（每区最多 5 行，超出提示"其余 N 条见工作台"），保留 URL 输入、刷新与跳转入口。
+
+#### 158.4 实测踩坑（避免重复）
+
+- 代理首版用 `routes.add_route("GET", path, handler)`，404 不生效。核实本机 aiohttp：`web.RouteTableDef()` **没有 `add_route` 方法**（`hasattr(r,'add_route')==False`），只有装饰器式 `routes.get(path)`；改为 `routes.get("/workbench-api/{suffix:.*}")(_proxy)` 后 GET 通。
+- 第二版同时注册 GET 和 HEAD，启动即 `RuntimeError: Added route will never be executed, method HEAD is already registered`：aiohttp GET 路由隐含允许 HEAD，显式再注册 HEAD 冲突。删除 HEAD 装饰器注册只留 GET；`SAFE_METHODS` 集合内保留 HEAD 仅供 handler 判断。
+
+#### 158.5 真机验收与回归
+
+- ComfyUI v0.30.2（PID 1672）+ 工作台后端（PID 9696）同起：代理 `GET /workbench-api/health`、`/overview`、`/sidebar-summary` 均 200；`GET /workbench-api/rules`（非白名单）403；`POST /workbench-api/health` 405；面板 JS `/extensions/workbench/workbench_panel.js` 200。
+- 摘要六域返回 rules 12 / history 4 / assets 0 / workflows 4 / drafts 2 / loras 3；抽查投影：规则仅 level/scope_key/rule_key/value，历史仅 prompt_id/status/created_at/model，草稿仅 name/tags/favored/pinned/updated_at/工作流标题，LoRA 仅 name，无正文/备注/快照/路径/图片泄漏。
+- object_info 复核 `WorkbenchRuleQuery`、`WorkbenchReleaseVram` 仍注册；两个启动日志 Traceback/RuntimeError/ImportError/ModuleNotFound/ERROR 命中 0。验收后停止两进程，8188/17890 释放，无残留 python。
+- 后端全量 **392 passed**（原 382 + 摘要 6 + 代理 4）；前端 `npm run build` 37 模块构建绿（CSS 47.21kB / gzip 8.51kB，JS 255.02kB / gzip 80.07kB）。
+
+#### 158.6 仍阻塞/未落地
+
+- 浏览器只读会话长期方案：本轮由扩展 Python 代理持 node token 转发绕开跨源读不到令牌/cookie 的限制；面板内规则/草稿等明细仍只读，编辑跳转完整工作台。
+- 候选节点进画布前需画布桥把 workflow_id/checkpoint 规则/working_prompts/受保护术语带到节点侧，当前被画布桥阶段阻塞；脱离上下文裸做会退化成通用 Ollama 对话，查重判定不重复造。
+
+
 

@@ -10,12 +10,13 @@ ComfyUI 侧边栏面板。**所有代码与数据都留在本仓库，不复制�
 comfyui_extension/
 ├─ extra_paths.yaml          # 给 ComfyUI 的外部节点路径配置
 └─ workbench/                # 节点包（被 ComfyUI 扫描加载）
-   ├─ __init__.py            # 注册 NODE_CLASS_MAPPINGS、WEB_DIRECTORY
+   ├─ __init__.py            # 注册 NODE_CLASS_MAPPINGS、WEB_DIRECTORY、代理路由
    ├─ backend_client.py      # 回环 HTTP 客户端（仅标准库，对接现有后端）
+   ├─ proxy.py               # 本地只读代理：浏览器→ComfyUI 同源→后端（带节点令牌）
    ├─ rules_node.py          # 规则只读查询节点
    ├─ release_node.py        # 卸载 LLM / 释放显存节点
    └─ web/
-      └─ workbench_panel.js  # 侧边栏页签（只读：健康探针 + 概览计数 + 跳转工作台）
+      └─ workbench_panel.js  # 侧边栏页签（健康探针 + 概览计数 + 分区只读摘要）
 ```
 
 ## 挂载方式（不污染整合包）
@@ -89,9 +90,9 @@ ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首�
 | --- | --- | --- | --- | --- |
 | 高 ✅已装 | ComfyUI-Lora-Auto-Trigger-Words | `idrirap/ComfyUI-Lora-Auto-Trigger-Words` | 自动拉取 LoRA 触发词（Civitai API + safetensors 元数据），支持堆叠 LoRA | 2026-11-20 已 clone 到整合包 `custom_nodes`，仅依赖 `requests`（整合包已带）；查重首选复用，LoRA 手动资料/身份归并/触发词共享/组合冲突裁决仍走工作台后端 |
 | 高 ✅已装 | ComfyUI-Unload-Model | `SeanScripts/ComfyUI-Unload-Model` | 卸载 ComfyUI 自身模型 / 全部模型释放显存 | 2026-11-20 已 clone；纯 Python/Torch 无额外依赖；只管 ComfyUI 模型，外部 Ollama 卸载仍用工作台自建节点 |
-| 中 | ComfyUI-Lora-Manager | `willmiao/ComfyUI-Lora-Manager` | LoRA 可视化网格、预览缩略图、触发词、可收藏组合（recipes） | 带 Python 依赖；LoRA 数量多时再装 |
-| 可选 | LoRa Loader with TriggerDB | `benstaniford/comfy-lora-loader-with-triggerdb` | 本地 JSON 持久化每个 LoRA 的触发词 | 配合提示词合并节点使用 |
-| 可选 | FindingLora | `shootthesound/comfyui-lora-FindingLora` | LoRA 书签 + 模糊搜索 + 触发词一键复制 | LoRA 下拉列表很长时有用 |
+| 中 ✅已装 | ComfyUI-Lora-Manager | `willmiao/ComfyUI-Lora-Manager` | LoRA 可视化网格、预览缩略图、触发词、可收藏组合（recipes） | 2026-11-20 已 clone 到整合包 `custom_nodes`；补装缺失依赖 olefile/natsort/aiosqlite/brotli；真机验收 22 个 `(LoraManager)` 节点注册、前端 JS 下发 200、日志无 Traceback；LoRA 手动资料/身份归并/触发词共享/组合冲突裁决仍走工作台后端 |
+| 可选 ⚠️跳过 | LoRa Loader with TriggerDB | `benstaniford/comfy-lora-loader-with-triggerdb` | 本地 JSON 持久化每个 LoRA 的触发词 | 上游仓库 GitHub 404、API 无公开匹配仓，判定已下架/私有，本机不可得，跳过；触发词能力由 Auto-Trigger-Words 与 FindingLora 覆盖 |
+| 可选 ✅已装 | FindingLora | `shootthesound/comfyui-lora-FindingLora` | LoRA 书签 + 模糊搜索 + 触发词一键复制 | 2026-11-20 已 clone；纯标准库/Comfy 内部依赖、无第三方 requirements；真机验收 `LoraLoaderFindingLora` 节点注册、日志无 Traceback |
 
 **不建议安装**（已被内置能力或工作台自建覆盖）：
 
@@ -110,11 +111,23 @@ ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首�
    识别加载；配套节点专用只读令牌机制（凭据文件 + 后端只读放行）。
 2. **卸载 LLM / 释放显存节点**（已落地）：复用后端 `release-vram` 链路，
    节点令牌经窄白名单调用；返回卸载摘要与原始 JSON。
-3. LLM 候选节点，对接现有五模式与规则联动（依赖画布桥的工作流上下文，
+3. **侧边栏只读代理 + 分区摘要**（已落地）：扩展内 `proxy.py` 在 ComfyUI
+   同源侧注册白名单只读路由 `/workbench-api/*`，由 Python 侧持节点令牌
+   转发后端（绕过浏览器跨源无法读取令牌/cookie 的限制）；后端新增
+   `GET /api/sidebar/summary` 六域脱敏聚合投影；面板改为代理优先、直连
+   回退，分区折叠展示规则/草稿/素材/LoRA/历史摘要，超出条数引导回工作台。
+4. LLM 候选节点，对接现有五模式与规则联动（依赖画布桥的工作流上下文，
    排到画布桥阶段）。
-4. **侧边栏面板**（已落地只读）：注册工作台页签，探针后端连通状态、
-   拉取 `/api/overview` 展示规则/工作流/草稿/素材/历史计数，并跳转完整
-   工作台；草稿/素材/LoRA/规则编辑仍在工作台页面，待后续接入只读
-   浏览器会话后再在页签内展示明细列表。
 5. 画布桥：节点与画布节点读写、白名单确认；最后再评估服务层是否并入
    ComfyUI 自带服务。
+
+### 代理边界与实测踩坑
+
+- 代理只转发 `health` / `overview` / `sidebar-summary` 三个只读后缀；
+  其他后缀返回 403；非安全方法（POST 等）返回 405；后端不可达时 502 JSON。
+- 本机 aiohttp 的 `RouteTableDef` 没有 `add_route` 方法，注册必须用
+  `routes.get(path)` 装饰器/回调式；GET 路由已隐含允许 HEAD，不可再显式
+  注册 HEAD，否则启动即 `RuntimeError: method HEAD is already registered`。
+- 2026-11-20 真机（ComfyUI v0.30.2，PID 1672）实测：三个白名单 200、
+  非白名单 403、POST 405；面板 JS 与两个工作台节点正常下发，启动日志
+  无 Traceback。

@@ -36,6 +36,7 @@ import profile_source
 import queue_dispatcher
 import rule_engine
 import rule_store
+import sidebar_summary as sidebar_summary_module
 import task_queue
 from asset_api import router as asset_router
 from workflow_api import router as workflow_router
@@ -614,6 +615,19 @@ def overview():
         return {"ok": False, "version": APP_VERSION, "error": str(exc), "counts": counts}
 
     return {"ok": True, "version": APP_VERSION, "counts": counts}
+
+
+@app.get("/api/sidebar/summary")
+def sidebar_summary():
+    """Desensitized read-only aggregate for the external ComfyUI sidebar.
+
+    Like ``/api/overview`` it is consumed over loopback, but it requires a
+    session ticket, bearer token or the read-only node token. The projection
+    omits Prompt texts, draft notes, snapshots, absolute paths and image lists;
+    see ``sidebar_summary.build_summary``.
+    """
+    settings = load_settings()
+    return sidebar_summary_module.build_summary(DATA_ROOT, settings)
 
 
 @app.get("/api/settings")

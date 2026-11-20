@@ -92,7 +92,8 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
   `WORKBENCH_OPEN_BROWSER=0`（启动后不自动开浏览器）。
 - ComfyUI 扩展（节点 + 侧边栏页签）：双击 `启动 ComfyUI（工作台扩展）.bat`，
   或在绘世启动器启动参数里加 `--extra-model-paths-config` 指向
-  `comfyui_extension/extra_paths.yaml`；详见 [ComfyUI 外部扩展说明](comfyui_extension/README.md)。
+  `comfyui_extension/extra_paths.yaml`；面板经扩展本地只读代理（持节点令牌）
+  拉取后端脱敏摘要，明细编辑仍在完整工作台；详见 [ComfyUI 外部扩展说明](comfyui_extension/README.md)。
 
 ### 数据位置
 
@@ -123,6 +124,7 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
   数据与诊断               目录配置、只读诊断报告（含草稿计数/损坏巡检）、设置只读导出、整库备份导出与恢复写入（完整性校验/保守合并）已落地；数据库结构与损坏数据维持现状，不做自动迁移与自动改写修复
   UI 视觉打磨              页签/视图/筛选偏好记忆（含草稿/历史关键词与日期范围、候选任务要求）、深浅主题与字号三档（跟随系统、rem 化）已落地；本轮完成 Premium Light 设计令牌体系、应用外壳（侧栏导航+顶栏状态+内容区）、工作区只读摘要指标块、设置页左分类导航+右详情两栏、历史默认网格画廊、LoRA 资料提升为侧栏顶级页签；旧类外观经迁移期覆盖层对齐新令牌，候选/草稿/队列/历史有数据视图留联调复核
   免安装交付与启动脚本     启停脚本已落地（不做 EXE 安装包）
+  ComfyUI 外部扩展         外部目录挂载（不复制进整合包、不改其源码）：规则只读查询节点、释放显存节点、侧边栏页签；扩展内本地只读代理持节点令牌转发后端，面板分区展示规则/工作流/草稿/素材/LoRA/历史脱敏摘要；现成插件 Lora-Auto-Trigger-Words、Unload-Model、Lora-Manager、FindingLora 已装并真机验收，TriggerDB 上游 404 跳过；LLM 候选节点与画布节点读写待画布桥阶段
 
 ## 事实说明
 
