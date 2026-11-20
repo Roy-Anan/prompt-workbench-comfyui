@@ -695,7 +695,9 @@ R143 已落地：修复画布工作台候选/规则上下文节点提交校验�
 
 R144 已落地：`WorkbenchPromptCandidate` 拆出纯净正文输出口。原 `positive_text`/`negative_text` 继续带来源头信息（模式/模型/身份/Profile/题材/文风）供人核对；新增 `clean_positive`/`clean_negative` 只含候选正文、不带头信息，错误/空结果时输出空串，可直接接 CLIPTextEncode 或复制回工作台做安全写入而不会把说明文字写进正文。输出口由 3 个扩到 5 个、向后兼容，扩展测试同步断言。
 
-R145 已落地：`WorkbenchPromptCandidate` 完全去工作流。删除 `workflow_id` 输入与工作流规则联动，改为节点内三段点击选择（真实本地 Ollama `model`、LLM `persona` 人设、`prompt_profile` 模型提示词规则，`genre`/`style` 写作类可选层保留）。动态字段改回 combo 下拉，节点以 `VALIDATE_INPUTS` 把后端填充的 picker 字段排除出 ComfyUI 静态枚举校验，从根上解决 combo 提交 `Value not in list` 的矛盾；扩展前端用纯 value 字符串填充下拉并记忆选择。生成始终走 standalone 候选路由，纯净正文直连 CLIPTextEncode。规则上下文节点保持不动。
+R145 已落地：`WorkbenchPromptCandidate` 完全去工作流。删除 `workflow_id` 输入与工作流规则联动，改为节点内三段点击选择（真实本地 Ollama `model`、LLM `persona` 人设、`prompt_profile` 模型提示词规则，`genre`/`style` 写作类可选层保留）。动态字段改回 combo 下拉，节点以 `VALIDATE_INPUTS` 把后端填充的 picker 字段排除出 ComfyUI 静态枚举校验，从根上解决 combo 提交 `Value not in list` 的矛盾；扩展前端用纯 value 字符串填充下拉并记忆选择。生成始终走 standalone 候选路由，纯净正文直连 CLIPTextEncode。
+
+R146 已落地：`WorkbenchRuleContext` 同步去工作流依赖。删除 `source`（`workflow`/`rules` 切换）与 `workflow_id` 输入，不再按工作流拉取已解析规则上下文，只保留按层级 `level`（checkpoint / architecture / global）+ 可选 `scope_key` 浏览全局规则清单；画布显示名改为「工作台规则清单」。扩展前端 picker 移除该节点与 `workflow_id` 源，只给候选节点填充动态下拉；规则仍只读、不写回，代理白名单不变。扩展测试净减 3 条 workflow 模式断言、新增无 workflow 输入断言，31 passed；全量 453 passed（2 项环境型既有失败）。
 
 - **M3 规则引擎**：global 级规则已由引擎三级继承装载；sets 专用/通用套优先级判定已由 R115
   落地；逐候选勾选/驳回已由 R108 落地；规则版本历史查看与回退已由 R116 落地；候选差异预览已由

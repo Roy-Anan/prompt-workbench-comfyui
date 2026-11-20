@@ -24,7 +24,7 @@ def test_extension_registers_rule_context_node():
     assert cls.CATEGORY == "Workbench/Context"
     assert cls.RETURN_TYPES == ("STRING", "STRING")
     assert (
-        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchRuleContext"] == "工作台规则上下文"
+        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchRuleContext"] == "工作台规则清单"
     )
     assert (EXT_DIR / ext.WEB_DIRECTORY).is_dir()
 
@@ -33,16 +33,9 @@ def test_rule_context_node_shape():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
     types = cls.INPUT_TYPES()
-    assert set(types["required"]) == {
-        "source",
-        "workflow_id",
-        "level",
-        "scope_key",
-        "backend_url",
-    }
-    assert types["required"]["source"][0] == ["workflow", "rules"]
+    # Workflow-unbound: only the rule-store level/scope remain.
+    assert set(types["required"]) == {"level", "scope_key", "backend_url"}
     assert types["required"]["level"][0] == ["checkpoint", "architecture", "global"]
-    assert types["required"]["workflow_id"][0] == "STRING"
 
 
 def test_client_reports_error_without_backend(monkeypatch):
@@ -55,7 +48,7 @@ def test_client_reports_error_without_backend(monkeypatch):
     assert "error" in data
 
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
-    text, raw = node.load("rules", "", "global", "", "", "")
+    text, raw = node.load("global", "", "", "")
     assert "无法读取规则" in text
     assert raw == "{}"
 
@@ -205,60 +198,7 @@ def test_release_node_reports_error(monkeypatch):
     assert raw == "{}"
 
 
-# --- Merged rule-context node: workflow mode -----------------------------
-
-
-def test_rule_context_workflow_requires_id():
-    ext = _load()
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
-    text, raw = node.load("workflow", "", "global", "", "", "")
-    assert "workflow_id" in text
-    assert raw == "{}"
-
-
-def test_rule_context_workflow_renders_resolved_and_conflict(monkeypatch):
-    ext = _load()
-    import backend_client
-
-    payload = {
-        "status": "registered",
-        "checkpoint": "x.safetensors",
-        "architecture_label": "SD1.5",
-        "fields": [
-            {"key": "base", "status": "resolved", "value": "SD1.5", "source_level": "architecture"},
-            {"key": "step", "status": "conflict", "message": "两处取值不一致"},
-        ],
-        "conflicts": [],
-        "unknown": [],
-        "instruction": "未提供的参数不要臆造。",
-    }
-    monkeypatch.setattr(
-        backend_client, "workflow_rule_prompt", lambda wid, base="", tok="": payload
-    )
-
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
-    text, raw = node.load("workflow", "wf-1", "global", "", "", "")
-
-    assert "SD1.5" in text
-    assert "base" in text
-    assert "冲突" in text
-    assert "不要臆造" in text
-    assert '"step"' in raw
-
-
-def test_rule_context_workflow_reports_backend_error(monkeypatch):
-    ext = _load()
-    import backend_client
-
-    monkeypatch.setattr(
-        backend_client,
-        "workflow_rule_prompt",
-        lambda wid, base="", tok="": {"error": "URLError: x"},
-    )
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
-    text, raw = node.load("workflow", "wf-1", "global", "", "", "")
-    assert "无法读取规则上下文" in text
-    assert raw == "{}"
+# --- Rule-list node ---------------------------------------------------------
 
 
 def test_rule_context_rules_renders_items(monkeypatch):
@@ -281,18 +221,20 @@ def test_rule_context_rules_renders_items(monkeypatch):
     )
 
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
-    text, raw = node.load("rules", "", "global", "", "", "")
+    text, raw = node.load("global", "", "", "")
 
     assert "cfg" in text
     assert "7" in text
     assert '"items"' in raw
 
 
-def test_rule_context_workflow_id_is_free_text():
+def test_rule_context_has_no_workflow_input():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
-    # Free-text id; backend list options are only remembered by the extension JS.
-    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == "STRING"
+    types = cls.INPUT_TYPES()
+    assert "workflow_id" not in types["required"]
+    assert "workflow_id" not in types["optional"]
+    assert "source" not in types["required"]
 
 
 # --- Prompt candidate node -------------------------------------------------

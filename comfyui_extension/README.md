@@ -13,7 +13,7 @@ comfyui_extension/
    ├─ __init__.py            # 注册 NODE_CLASS_MAPPINGS、WEB_DIRECTORY、代理路由
    ├─ backend_client.py      # 回环 HTTP 客户端（仅标准库，对接现有后端）
    ├─ proxy.py               # 本地只读代理：浏览器→ComfyUI 同源→后端（带节点令牌）
-   ├─ rule_context_node.py   # 规则上下文节点（按工作流取上下文 / 按层级查规则）
+   ├─ rule_context_node.py   # 规则清单节点（按层级查全局规则）
    ├─ release_node.py        # 卸载 LLM / 释放显存节点
    ├─ candidate_node.py      # 本地 LLM 提示词候选生成节点
    └─ web/
@@ -124,27 +124,25 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    回退，分区折叠展示工作流（id/标题/确认态）/规则/草稿/素材/LoRA/历史摘要，
    超出条数引导回工作台。节点侧 `backend_client.list_workflows()` 复用
    `GET /api/workflows` 提供只读清单，为画布字段回填与记忆预留契约。
-4. **规则上下文节点 + 候选生成节点**（已落地前置切片）：
-   `WorkbenchRuleContext` 用 `source` 切换两种只读看法——`workflow` 按输入的
-   `workflow_id` 拉取后端已解析的规则上下文（已解析字段/冲突/未覆盖/口径说明），
-   `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate` 不绑定后端工作流，
-   节点上直接三段点击选择——真实本地 Ollama `model`、LLM `persona` 人设、
-   `prompt_profile` 模型提示词规则（`genre`/`style` 为写作类可选层）——调后端
-   本地候选，候选只回画布、不写回草稿。输出分两套：`positive_text` /
-   `negative_text` 带来源头信息（模式/模型/身份/Profile/题材/文风）供人核对，
-   `clean_positive` / `clean_negative` 只带正文，可直接接 CLIPTextEncode 或
-   复制回工作台做安全写入。
+4. **规则清单节点 + 候选生成节点**（已落地前置切片）：
+   `WorkbenchRuleContext` 不绑定工作流，只按层级（checkpoint / architecture /
+   global）+ 可选 `scope_key` 浏览全局规则清单；`WorkbenchPromptCandidate`
+   不绑定后端工作流，节点上直接三段点击选择——真实本地 Ollama `model`、LLM
+   `persona` 人设、`prompt_profile` 模型提示词规则（`genre`/`style` 为写作类
+   可选层）——调后端本地候选，候选只回画布、不写回草稿。输出分两套：
+   `positive_text` / `negative_text` 带来源头信息（模式/模型/身份/Profile/题材/
+   文风）供人核对，`clean_positive` / `clean_negative` 只带正文，可直接接
+   CLIPTextEncode 或复制回工作台做安全写入。
 5. **画布桥：动态下拉与记忆**（已落地）：候选节点的 `model`、`persona`、
    `prompt_profile`、`genre`、`style` 均为 combo 下拉——Python 侧用占位列表
    声明，真实选项来自工作台后端；节点以 `VALIDATE_INPUTS` 把这些字段排除出
    ComfyUI 的静态枚举校验（否则提交会报 `Value not in list`），扩展前端经代理
    分别拉 `/api/ollama/models`、`/api/prompt-profiles`、`/api/personas`、
    `/api/genres`、`/api/styles` 清单，用纯 value 填充下拉并记忆浏览器本地选择；
-   新建节点优先沿用同画布已绑定节点的选择，其次回退本地记忆。规则上下文节点的
-   `workflow_id` 仍为 STRING 自由文本（读规则时按工作流 id 定位）。节点不回写
-   后端，草稿/规则/素材管理留 Web 主阵地。
-6. 后续：候选节点与画布 CLIPTextEncode 的写入衔接深化；规则上下文节点的工作流
-   读取保持现状；再评估服务层是否并入 ComfyUI 自带服务。
+   新建节点优先沿用同画布已绑定节点的选择，其次回退本地记忆。节点不回写后端，
+   草稿/规则/素材管理留 Web 主阵地。
+6. 后续：候选节点与画布 CLIPTextEncode 的写入衔接深化；再评估服务层是否并入
+   ComfyUI 自带服务。
 
 ### 代理边界与实测踩坑
 

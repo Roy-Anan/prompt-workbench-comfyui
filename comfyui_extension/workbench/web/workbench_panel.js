@@ -303,22 +303,20 @@ app.registerExtension({
 
 // --- Node pickers: backend-filled combos on workbench nodes ----------------
 //
-// The Python nodes seed their picker combos with placeholders because the real
-// option lists (local Ollama models, personas, prompt profiles, genres, styles,
-// imported workflows) live on the workbench backend and cannot be known at
-// node-definition time. This side script reads those lists through the same
-// read-only proxy, replaces the placeholder combo options with plain value
-// strings, and remembers the last choice locally so a freshly added node reuses
-// it. The Python nodes opt the picker fields out of ComfyUI's static enum check
-// via VALIDATE_INPUTS, so the backend-filled value passes validation. Nodes
-// never write back to the backend; draft/rule editing stays in the workbench
-// web app.
+// The candidate node seeds its picker combos with placeholders because the real
+// option lists (local Ollama models, personas, prompt profiles, genres, styles)
+// live on the workbench backend and cannot be known at node-definition time.
+// This side script reads those lists through the same read-only proxy, replaces
+// the placeholder combo options with plain value strings, and remembers the
+// last choice locally so a freshly added node reuses it. The node opts the
+// picker fields out of ComfyUI's static enum check via VALIDATE_INPUTS, so the
+// backend-filled value passes validation. Nodes never write back to the
+// backend; draft/rule editing stays in the workbench web app.
 
-const PICKER_NODE_TYPES = ["WorkbenchRuleContext", "WorkbenchPromptCandidate"];
+const PICKER_NODE_TYPES = ["WorkbenchPromptCandidate"];
 
 // widget name -> proxy suffix + localStorage key for the last chosen value.
 const PICKER_SOURCES = {
-  workflow_id: { endpoint: "workflows", storage: "workbench.lastWorkflowId" },
   model: { endpoint: "ollama-models", storage: "workbench.lastOllamaModel" },
   prompt_profile: { endpoint: "profiles", storage: "workbench.lastProfile" },
   persona: { endpoint: "personas", storage: "workbench.lastPersona" },
@@ -409,9 +407,6 @@ function bindPickerNode(node) {
 
       if (widget.type === "combo") {
         applyComboOptions(widget, values);
-        widget.value = next;
-      } else if (!values.includes(current)) {
-        // STRING widget (rule-context workflow_id): recover a valid id only.
         widget.value = next;
       }
     });
