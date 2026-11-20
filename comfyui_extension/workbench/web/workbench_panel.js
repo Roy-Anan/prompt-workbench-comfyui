@@ -237,7 +237,7 @@ function renderPanel(container) {
       status.style.color = "#4caf50";
       const counts = {
         rules: (summary.sections && summary.sections.rules && summary.sections.rules.total) || 0,
-        workflows: 0,
+        workflows: (summary.sections && summary.sections.workflows && summary.sections.workflows.total) || 0,
         drafts: (summary.sections && summary.sections.drafts && summary.sections.drafts.total) || 0,
         assets: (summary.sections && summary.sections.assets && summary.sections.assets.total) || 0,
         history: (summary.sections && summary.sections.history && summary.sections.history.total) || 0,
