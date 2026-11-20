@@ -315,16 +315,19 @@ def test_extension_registers_candidate_node():
         ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchPromptCandidate"]
         == "工作台提示词候选生成"
     )
+    # The node is canvas-bound: no backend workflow_id input remains.
+    types = cls.INPUT_TYPES()
+    assert "workflow_id" not in types["required"]
+    assert "workflow_id" not in types["optional"]
 
 
 def test_candidate_node_requires_model_only():
     ext = _load()
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
 
-    # An empty workflow_id is a valid standalone round; only the model is
-    # mandatory.
+    # Only the model is mandatory; no workflow binding is involved.
     positive, negative, raw, clean_positive, clean_negative = node.generate(
-        "", "", "draft", "任务", "", ""
+        "", "draft", "任务", "", ""
     )
     assert "模型名" in positive
     assert negative == ""
@@ -343,7 +346,7 @@ def test_candidate_node_renders_candidate(monkeypatch):
 
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     positive, negative, raw, clean_positive, clean_negative = node.generate(
-        "wf-1", "qwen3:latest", "polish", "优化一下", "", ""
+        "qwen3:latest", "polish", "优化一下", "", ""
     )
 
     assert "润色后的提示词" in positive
@@ -368,7 +371,7 @@ def test_candidate_node_passes_sampling_options(monkeypatch):
     monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     node.generate(
-        "wf-1", "m", "draft", "任务", "", "",
+        "m", "draft", "任务", "", "",
         temperature=0.7, top_p=0.9, num_ctx=4096,
     )
 
@@ -389,7 +392,7 @@ def test_candidate_node_omits_unset_options(monkeypatch):
 
     monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    node.generate("wf-1", "m", "draft", "任务", "", "")
+    node.generate("m", "draft", "任务", "", "")
 
     assert "temperature" not in captured
     assert "top_p" not in captured
@@ -407,7 +410,7 @@ def test_candidate_node_reports_backend_error(monkeypatch):
     )
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     positive, negative, raw, clean_positive, clean_negative = node.generate(
-        "wf-1", "m", "draft", "任务", "", ""
+        "m", "draft", "任务", "", ""
     )
     assert "队列有待执行任务" in positive
     assert "409" in raw
@@ -416,25 +419,45 @@ def test_candidate_node_reports_backend_error(monkeypatch):
     assert clean_negative == ""
 
 
-def test_candidate_node_workflow_id_is_free_text():
+def test_candidate_node_has_no_workflow_input():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
-    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == "STRING"
+    types = cls.INPUT_TYPES()
+    assert "workflow_id" not in types["required"]
+    assert "workflow_id" not in types["optional"]
 
 
-def test_candidate_node_model_is_free_text():
+def test_candidate_node_model_is_combo():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
-    # Free-text model name; the extension JS remembers the last chosen model.
-    assert cls.INPUT_TYPES()["required"]["model"][0] == "STRING"
+    # Combo seeded with an empty placeholder; the extension JS fills the real
+    # Ollama models and VALIDATE_INPUTS opts the field out of the enum check.
+    assert cls.INPUT_TYPES()["required"]["model"][0] == [""]
 
 
-def test_candidate_node_profile_free_text_defaults_auto():
+def test_candidate_node_profile_combo_defaults_auto():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
     profile = cls.INPUT_TYPES()["optional"]["prompt_profile"]
-    assert profile[0] == "STRING"
+    assert profile[0] == ["auto"]
     assert profile[1]["default"] == "auto"
+
+
+def test_candidate_node_pickers_are_combos():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
+    optional = cls.INPUT_TYPES()["optional"]
+    assert optional["persona"][0] == ["none"]
+    assert optional["genre"][0] == [""]
+    assert optional["style"][0] == [""]
+
+
+def test_candidate_node_validate_inputs_accepts_dynamic_pickers():
+    ext = _load()
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    # VALIDATE_INPUTS opts the backend-filled pickers out of the static combo
+    # enum check while keeping the normal check for the fixed "mode" combo.
+    assert node.VALIDATE_INPUTS("m", "none", "auto", "", "") is True
 
 
 def test_candidate_node_exposes_identity_and_layer_slots():
@@ -459,7 +482,7 @@ def test_candidate_node_passes_identity_and_layers(monkeypatch):
     monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     node.generate(
-        "wf-1", "m", "draft", "写一段", "", "",
+        "m", "draft", "写一段", "", "",
         persona="writing_assistant",
         prompt_profile="none",
         genre="yanqing",
@@ -485,7 +508,7 @@ def test_candidate_node_defaults_to_bare_model_and_auto_profile(monkeypatch):
 
     monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    node.generate("wf-1", "m", "draft", "任务", "", "")
+    node.generate("m", "draft", "任务", "", "")
 
     body = captured["body"]
     assert body["persona"] == "none"
@@ -503,7 +526,7 @@ def test_candidate_node_negative_goes_to_negative_port(monkeypatch):
     )
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     positive, negative, raw, clean_positive, clean_negative = node.generate(
-        "wf-1", "m", "negative", "补负向", "", ""
+        "m", "negative", "补负向", "", ""
     )
     assert positive == ""
     assert "bad hands" in negative
@@ -511,7 +534,7 @@ def test_candidate_node_negative_goes_to_negative_port(monkeypatch):
     assert clean_negative == "lowres, bad hands"
 
 
-def test_candidate_node_standalone_sends_empty_workflow_id(monkeypatch):
+def test_candidate_node_always_uses_standalone_route(monkeypatch):
     ext = _load()
     import backend_client
 
@@ -523,5 +546,5 @@ def test_candidate_node_standalone_sends_empty_workflow_id(monkeypatch):
 
     monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    node.generate("", "m", "draft", "任务", "", "")
+    node.generate("m", "draft", "任务", "", "")
     assert captured["wid"] == ""

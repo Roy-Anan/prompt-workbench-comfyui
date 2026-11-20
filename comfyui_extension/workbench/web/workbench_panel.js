@@ -301,16 +301,18 @@ app.registerExtension({
   },
 });
 
-// --- Node pickers: last-choice memory for dynamic string fields -------------
+// --- Node pickers: backend-filled combos on workbench nodes ----------------
 //
-// The dynamic fields are plain STRING widgets on the Python side: a combo would
-// be validated against a static placeholder list that cannot know the backend
-// ids, so the nodes keep free-text entry. This side script reads the imported
-// workflows, local Ollama models and Prompt Profiles through the same
-// read-only proxy, recovers a valid value when the current text is stale, and
-// remembers the last choice locally so a freshly added node reuses it. Nodes
-// never write back to the backend; draft/rule editing stays in the workbench web
-// app.
+// The Python nodes seed their picker combos with placeholders because the real
+// option lists (local Ollama models, personas, prompt profiles, genres, styles,
+// imported workflows) live on the workbench backend and cannot be known at
+// node-definition time. This side script reads those lists through the same
+// read-only proxy, replaces the placeholder combo options with plain value
+// strings, and remembers the last choice locally so a freshly added node reuses
+// it. The Python nodes opt the picker fields out of ComfyUI's static enum check
+// via VALIDATE_INPUTS, so the backend-filled value passes validation. Nodes
+// never write back to the backend; draft/rule editing stays in the workbench
+// web app.
 
 const PICKER_NODE_TYPES = ["WorkbenchRuleContext", "WorkbenchPromptCandidate"];
 
@@ -352,16 +354,28 @@ async function fetchPickerList(suffix) {
   return pickerCache[suffix];
 }
 
-// The dynamic fields are plain STRING widgets on the Python side (a combo would
-// be validated against a static placeholder list that cannot know the backend
-// ids). Here we only read the backend list to recover a valid value and remember
-// the last choice; the widget keeps its free-text entry.
+// The picker fields are combo widgets on the Python side, seeded with a
+// placeholder and opted out of ComfyUI's static enum check by VALIDATE_INPUTS.
+// Here we only replace the placeholder options with plain value strings and
+// remember the last choice; the widget keeps its real combo UI.
 function valuesFor(widgetName, items) {
   const ids = (items || []).map((item) => item.id || "").filter(Boolean);
   if (widgetName === "persona") return ["none", ...ids];
+  if (widgetName === "prompt_profile") return ["auto", "none", ...ids];
   if (widgetName === "genre" || widgetName === "style") return ["", ...ids];
-  if (widgetName === "prompt_profile") return ["auto", ...ids];
   return ids;
+}
+
+function applyComboOptions(widget, values) {
+  if (!widget) return;
+  const opts = values.length ? values : [""];
+  if (Array.isArray(widget.options)) {
+    widget.options = opts;
+  } else if (widget.options && typeof widget.options === "object") {
+    widget.options.values = opts;
+  } else {
+    widget.options = opts;
+  }
 }
 
 function siblingValue(node, name) {
@@ -382,13 +396,23 @@ function bindPickerNode(node) {
     void fetchPickerList(source.endpoint).then((items) => {
       const values = valuesFor(widget.name, items);
       const current = String(widget.value ?? "");
-      if (!values.includes(current)) {
-        // Reuse a value already bound on this canvas first, then fall back to
-        // the last choice remembered in this browser; otherwise the first
-        // (empty / sentinel) value. Stale "label,value" strings saved by an
-        // earlier combo build are replaced here as well.
-        const inherited = siblingValue(node, widget.name) || localStorage.getItem(source.storage);
-        widget.value = values.includes(inherited) ? inherited : values[0];
+      // Reuse a value already bound on this canvas first, then fall back to
+      // the last choice remembered in this browser; otherwise the first
+      // (empty / sentinel) value. Stale "label,value" strings saved by an
+      // earlier combo build are replaced here as well.
+      const inherited = siblingValue(node, widget.name) || localStorage.getItem(source.storage);
+      const next = values.includes(inherited)
+        ? inherited
+        : values.includes(current)
+          ? current
+          : values[0];
+
+      if (widget.type === "combo") {
+        applyComboOptions(widget, values);
+        widget.value = next;
+      } else if (!values.includes(current)) {
+        // STRING widget (rule-context workflow_id): recover a valid id only.
+        widget.value = next;
       }
     });
 

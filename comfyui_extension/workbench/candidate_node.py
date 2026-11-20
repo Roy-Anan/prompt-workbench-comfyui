@@ -1,24 +1,24 @@
 """Local-LLM prompt candidate node: ask the workbench backend to produce one
 prompt candidate, straight from the canvas.
 
-The backend resolves the rule context, existing prompts and protected terms
-server-side; this node does not hold that context itself. The suggestion is
-returned to the canvas but never written back to a draft, rule or setting.
-Draft persistence stays in the workbench web app.
+This node is workflow-unbound by design: it sits inside the ComfyUI graph and
+targets the canvas directly, so it does not take a backend ``workflow_id`` and
+does not pull workflow rules. The caller picks three layers on the node itself:
+a real local Ollama ``model``, an LLM ``persona`` (identity / system prompt) and
+a ``prompt_profile`` (model prompt rules); ``genre`` / ``style`` remain as
+optional writing-class layers. The suggestion is returned to the canvas but
+never written back to a draft, rule or setting.
 
 Identity model (see ``THREE_SLICE_SPEC.md``):
 
 - ``persona`` selects the LLM identity layer; empty / ``none`` means bare
   model (no system identity). ``genre`` / ``style`` are writing-class layers.
-- ``workflow_id`` is optional: leave it empty for a standalone bare-model or
-  writing round. When a workflow is bound the backend pre-selects a default
-  rule profile, but the profile slot still has its own three states.
 - The node exposes five outputs: ``positive_text`` / ``negative_text`` carry
   the human-readable header plus the prompt body; ``raw_json`` carries the
   backend payload; ``clean_positive`` / ``clean_negative`` carry only the
-  prompt body so they can be wired straight into a CLIPTextEncode or copied
-  back to the workbench for a safe write. A writing / bare-model result lands
-  in the positive ports; a negative-mode result lands in the negative ports.
+  prompt body so they can be wired straight into a CLIPTextEncode. A writing /
+  bare-model result lands in the positive ports; a negative-mode result lands
+  in the negative ports.
 """
 
 from __future__ import annotations
@@ -56,31 +56,28 @@ class WorkbenchPromptCandidate:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # Free-text workflow id. The real options live on the workbench
-                # backend; a combo would be validated against a static placeholder
-                # list that cannot know those ids, so this stays a plain string and
-                # the extension JS only remembers the last chosen value. Empty
-                # means a standalone round (no bound workflow).
-                "workflow_id": ("STRING", {"default": ""}),
-                # Free-text local Ollama model name (same rationale as workflow_id).
-                "model": ("STRING", {"default": ""}),
+                # Real local Ollama model name. The combo is seeded with an
+                # empty placeholder; the extension JS fills the real list from
+                # /api/ollama/models, and VALIDATE_INPUTS opts this field out
+                # of the static enum check below.
+                "model": ([""], {"default": ""}),
                 "mode": (MODES, {"default": "draft"}),
                 "task": ("STRING", {"default": "", "multiline": True}),
                 "backend_url": ("STRING", {"default": ""}),
             },
             "optional": {
                 "token": ("STRING", {"default": ""}),
-                # Identity layer. Empty / "none" = bare model, no identity system
-                # prompt. Free-text id; the extension JS remembers the last choice.
-                "persona": ("STRING", {"default": ""}),
-                # "auto" matches a local Profile by checkpoint / architecture;
-                # "" / "none" skips the profile layer; otherwise a backend
-                # Profile id. Free-text, defaulting to auto.
-                "prompt_profile": ("STRING", {"default": "auto"}),
+                # Identity layer. Empty / "none" = bare model, no identity
+                # system prompt; other values resolve a registered persona.
+                "persona": (["none"], {"default": "none"}),
+                # Model prompt rules: "auto" picks a default Profile (without a
+                # bound workflow it falls back to the Core rules), "none" skips
+                # the layer, otherwise a registered Profile id.
+                "prompt_profile": (["auto"], {"default": "auto"}),
                 # Writing-class layers; ignored by the backend for prompt-class
                 # identities. Empty means the layer is not injected.
-                "genre": ("STRING", {"default": ""}),
-                "style": ("STRING", {"default": ""}),
+                "genre": ([""], {"default": ""}),
+                "style": ([""], {"default": ""}),
                 # Existing prompts optionally fed into the candidate round.
                 "positive_in": ("STRING", {"default": "", "multiline": True}),
                 "negative_in": ("STRING", {"default": "", "multiline": True}),
@@ -101,15 +98,27 @@ class WorkbenchPromptCandidate:
     FUNCTION = "generate"
     CATEGORY = "Workbench/LLM"
 
+    @classmethod
+    def VALIDATE_INPUTS(cls, model, persona, prompt_profile, genre, style):
+        """Let the dynamic picker fields accept backend-filled combo values.
+
+        The real option lists live on the workbench backend and are filled into
+        the combo widgets by the extension JS after the canvas loads, so the
+        static Python placeholders above can never enumerate them. ComfyUI
+        skips its default enum/min/max check for every input named in this
+        method's signature, so returning ``True`` keeps the picker fields
+        free-form while the fixed ``mode`` combo still gets its normal check.
+        """
+        return True
+
     def generate(
         self,
-        workflow_id,
         model,
         mode,
         task,
         backend_url,
         token="",
-        persona="",
+        persona="none",
         prompt_profile="auto",
         genre="",
         style="",
@@ -119,7 +128,6 @@ class WorkbenchPromptCandidate:
         top_p=_UNSET,
         num_ctx=-1,
     ):
-        workflow_id = _clean(workflow_id)
         model = _clean(model)
         if not model:
             return (
@@ -166,7 +174,9 @@ class WorkbenchPromptCandidate:
         if num_ctx >= 0:
             body["num_ctx"] = num_ctx
 
-        data = backend_client.prompt_candidates(workflow_id, body, backend_url, token)
+        # The node is workflow-unbound: always hit the standalone candidate
+        # route (empty workflow id) so the three pickers drive the request.
+        data = backend_client.prompt_candidates("", body, backend_url, token)
         if "error" in data:
             return (
                 f"[workbench] 候选生成失败：{data['error']}",

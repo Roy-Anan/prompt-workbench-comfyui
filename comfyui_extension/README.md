@@ -127,23 +127,24 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
 4. **规则上下文节点 + 候选生成节点**（已落地前置切片）：
    `WorkbenchRuleContext` 用 `source` 切换两种只读看法——`workflow` 按输入的
    `workflow_id` 拉取后端已解析的规则上下文（已解析字段/冲突/未覆盖/口径说明），
-   `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate`
-   同按 `workflow_id` 调后端五模式本地候选，规则、现有提示词、受保护术语
-   均由后端按 id 取齐，候选只回画布、不写回草稿。输出分两套：`positive_text` /
+   `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate` 不绑定后端工作流，
+   节点上直接三段点击选择——真实本地 Ollama `model`、LLM `persona` 人设、
+   `prompt_profile` 模型提示词规则（`genre`/`style` 为写作类可选层）——调后端
+   本地候选，候选只回画布、不写回草稿。输出分两套：`positive_text` /
    `negative_text` 带来源头信息（模式/模型/身份/Profile/题材/文风）供人核对，
    `clean_positive` / `clean_negative` 只带正文，可直接接 CLIPTextEncode 或
    复制回工作台做安全写入。
-5. **画布桥：动态字段回填与记忆**（已落地）：节点的 `workflow_id`、候选节点的
-   `model`（本地 Ollama 模型）、`persona`、`prompt_profile`、`genre`、`style`
-   均为 STRING 自由文本——combo 的静态占位列表过不了 ComfyUI 后端枚举校验，
-   故不用下拉；扩展前端经代理分别拉 `/api/workflows`、`/api/ollama/models`、
-   `/api/prompt-profiles`、`/api/personas`、`/api/genres`、`/api/styles` 清单，
-   仅在当前文本非法时回填合法 id，并记忆浏览器本地选择；新建节点优先沿用
-   同画布已绑定节点的选择，其次回退本地记忆。完整的
-   graph↔workflow 指纹自动匹配仍后置（画布 graph 与后端 API 工作流结构不同，
-   不臆造不可靠绑定）；节点不回写后端，草稿/规则/素材管理留 Web 主阵地。
-6. 后续：节点与画布节点双向读写的深化、当前工作流上下文全自动感知；再评估
-   服务层是否并入 ComfyUI 自带服务。
+5. **画布桥：动态下拉与记忆**（已落地）：候选节点的 `model`、`persona`、
+   `prompt_profile`、`genre`、`style` 均为 combo 下拉——Python 侧用占位列表
+   声明，真实选项来自工作台后端；节点以 `VALIDATE_INPUTS` 把这些字段排除出
+   ComfyUI 的静态枚举校验（否则提交会报 `Value not in list`），扩展前端经代理
+   分别拉 `/api/ollama/models`、`/api/prompt-profiles`、`/api/personas`、
+   `/api/genres`、`/api/styles` 清单，用纯 value 填充下拉并记忆浏览器本地选择；
+   新建节点优先沿用同画布已绑定节点的选择，其次回退本地记忆。规则上下文节点的
+   `workflow_id` 仍为 STRING 自由文本（读规则时按工作流 id 定位）。节点不回写
+   后端，草稿/规则/素材管理留 Web 主阵地。
+6. 后续：候选节点与画布 CLIPTextEncode 的写入衔接深化；规则上下文节点的工作流
+   读取保持现状；再评估服务层是否并入 ComfyUI 自带服务。
 
 ### 代理边界与实测踩坑
 
