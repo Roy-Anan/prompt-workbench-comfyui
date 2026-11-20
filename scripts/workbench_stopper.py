@@ -2,8 +2,8 @@
 
 Safety model:
   * The recorded PID is never trusted alone. Before terminating, the stopper
-    verifies process identity against several stable attributes: executable
-    path, command line, working directory and the workbench Python venv.
+    verifies process identity against stable attributes: interpreter path or
+    command line, command-line entry, recorded instance id and creation time.
   * If identity cannot be confirmed (PID reused by another program, missing
     attributes, or a mismatch), the process is left alone and a warning is
     printed for manual review.
@@ -27,9 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PID_FILE = REPO_ROOT / ".workbench.pid"
 RUNTIME_RECORD_FILE = REPO_ROOT / ".workbench-runtime.json"
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
-BACKEND_DIR = REPO_ROOT / "backend"
 APP_ID = "ComfyUI-Prompt-Workbench"
-APP_MARKER = "uvicorn"  # Command-line marker for the tracked backend process.
+DEFAULT_HOST = os.environ.get("WORKBENCH_HOST", "127.0.0.1")
+DEFAULT_PORT = int(os.environ.get("WORKBENCH_PORT", "17890"))
 
 kernel32 = ctypes.windll.kernel32
 
@@ -67,15 +67,14 @@ def pid_alive(pid: int) -> bool:
 def _process_info(pid: int) -> dict[str, str] | None:
     """Read stable identity attributes for a PID via CIM.
 
-    Returns a dict with ExecutablePath, CommandLine, CreationDate,
-    WorkingDirectory (when available), or None when the process is gone.
+    Returns a dict with ExecutablePath, CommandLine and CreationDate,
+    or None when the process is gone.
     """
     ps = (
         "Get-CimInstance Win32_Process -Filter "
         f'"ProcessId={pid}" | '
         "Select-Object ProcessId,ExecutablePath,CommandLine,"
-        "@{n='CreationDate';e={$_.CreationDate.ToString(\"yyyy-MM-ddTHH:mm:ss.ffffffZ\")}},"
-        "WorkingDirectory | "
+        "@{n='CreationDate';e={$_.CreationDate.ToString(\"yyyy-MM-ddTHH:mm:ss.ffffffZ\")}} | "
         "ConvertTo-Json -Compress"
     )
     try:
@@ -103,6 +102,38 @@ def _normalized(path: str | None) -> str:
     if not path:
         return ""
     return str(Path(path)).lower().replace("/", "\\")
+
+
+def _is_backend_command(cmd: str) -> bool:
+    """True when the command line launches this workbench backend.
+
+    Two entry forms are accepted: the launcher's
+    ``python -m uvicorn main:app`` and the direct entry ``python main.py``
+    (``main.py`` runs uvicorn internally). Anything else (another Python
+    service, a static server, ...) fails closed.
+    """
+    if not cmd:
+        return False
+    if "main.py" in cmd:
+        return True
+    return "uvicorn" in cmd and "main:app" in cmd
+
+
+def _venv_interpreter(exe: str, cmd: str) -> bool:
+    """True when the process runs the project venv interpreter.
+
+    On Windows the venv ``python.exe`` launcher may hand off to the base
+    interpreter, so the actual listening child's ``ExecutablePath`` can point
+    at the base interpreter while its command line still carries the venv
+    path. Accept either signal: executable path, or the first command-line
+    token (the interpreter itself).
+    """
+    venv = _normalized(str(VENV_PYTHON))
+    if exe == venv:
+        return True
+    parts = cmd.strip().split()
+    first = parts[0].strip('"').strip("'") if parts else ""
+    return _normalized(first) == venv
 
 
 def read_runtime_record() -> dict | None:
@@ -142,13 +173,74 @@ def _health_instance(host: str | None, port: int | None) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _health_app_matches(host: str, port: int) -> bool:
+    """True only if the loopback health probe identifies this app.
+
+    Used by the no-record fallback: without a launcher record there is no
+    per-launch instance id to compare, so the app identifier alone (plus the
+    venv-executable check on the owning PID) is the identity signal.
+    """
+    try:
+        import http.client
+
+        conn = http.client.HTTPConnection(str(host), int(port), timeout=1.0)
+        conn.request("GET", "/api/health")
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        payload = json.loads(body.decode("utf-8"))
+    except (OSError, http.client.HTTPException, ValueError, UnicodeDecodeError):
+        return False
+    return payload.get("app") == APP_ID or payload.get("app_id") == APP_ID
+
+
+def _listening_pids(port: int) -> list[int]:
+    """PIDs with a listening socket on the loopback backend port."""
+    ps = (
+        "Get-NetTCPConnection -LocalPort {0} -State Listen "
+        "-ErrorAction SilentlyContinue | "
+        "Select-Object -ExpandProperty OwningProcess"
+    ).format(int(port))
+    try:
+        output = subprocess.check_output(
+            [_powershell_exe(), "-NoProfile", "-Command", ps],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    return [int(line.strip()) for line in output.splitlines() if line.strip().isdigit()]
+
+
+def identify_loose(pid: int) -> tuple[bool, str]:
+    """Conservative identity check when no launcher record exists.
+
+    No per-launch instance id or creation time is available; the process is
+    accepted only when its executable is the project venv interpreter and its
+    command line launches this backend. Other Python processes are left alone.
+    """
+    info = _process_info(pid)
+    if info is None:
+        return False, "无法读取进程身份信息（进程可能已退出）"
+
+    exe = _normalized(info.get("ExecutablePath"))
+    cmd = (info.get("CommandLine") or "").lower()
+    if not exe:
+        return False, "缺少可执行路径，身份无法确认"
+    if not _venv_interpreter(exe, cmd):
+        return False, f"解释器不属于项目 .venv：{exe}"
+    if not _is_backend_command(cmd):
+        return False, "命令行不是本工作台后端入口"
+    return True, "身份匹配（无记录兜底）"
+
+
 def identify_workbench(pid: int, record: dict | None = None) -> tuple[bool, str]:
     """Confirm the PID belongs to this workbench.
 
     The PID alone is never trusted. We compare the live process against the
-    structured launcher record on executable path, working directory, command
-    line, recorded instance id and process creation time. Any missing critical
-    attribute or mismatch fails closed: the process is left alone.
+    structured launcher record on executable path, command line, recorded
+    instance id and process creation time. Any missing critical attribute or
+    mismatch fails closed: the process is left alone.
     """
     info = _process_info(pid)
     if info is None:
@@ -157,16 +249,16 @@ def identify_workbench(pid: int, record: dict | None = None) -> tuple[bool, str]
     exe = _normalized(info.get("ExecutablePath"))
     cmd = (info.get("CommandLine") or "").lower()
     creation = info.get("CreationDate")
-    venv = _normalized(str(VENV_PYTHON))
 
     if not exe:
         return False, "缺少可执行路径，身份无法确认"
-    if exe != venv:
-        return False, f"可执行路径不属于项目 .venv：{exe}"
-    if APP_MARKER not in cmd or "main:app" not in cmd:
-        return False, "命令行不是本工作台的 uvicorn 后端"
-    if BACKEND_DIR.name not in cmd and str(REPO_ROOT).lower() not in cmd:
-        return False, "命令行未指向项目后端目录"
+    if not _venv_interpreter(exe, cmd):
+        return False, f"解释器不属于项目 .venv：{exe}"
+    if not _is_backend_command(cmd):
+        return False, "命令行不是本工作台后端入口"
+    # Project ownership is already pinned by the executable being the project
+    # .venv interpreter above; the command line does not carry the working
+    # directory, so it is not checked for a repo path here.
 
     # Structured record is required for the stricter identity comparison.
     if not record:
@@ -192,11 +284,6 @@ def identify_workbench(pid: int, record: dict | None = None) -> tuple[bool, str]
     record_exe = _normalized(record.get("executable_path"))
     if record_exe and record_exe != exe:
         return False, f"可执行路径与记录不符：{exe} != {record_exe}"
-
-    record_cwd = _normalized(record.get("working_directory"))
-    live_cwd = _normalized(info.get("WorkingDirectory"))
-    if record_cwd and live_cwd and record_cwd != live_cwd:
-        return False, f"工作目录与记录不符：{live_cwd} != {record_cwd}"
 
     record_cmd = record.get("command_line")
     if isinstance(record_cmd, list):
@@ -267,27 +354,71 @@ def terminate(pid: int) -> bool:
     return bool(ok)
 
 
+def _terminate_tree(targets: list[int]) -> bool:
+    """Terminate the root plus descendants, waiting briefly for exit."""
+    for pid in targets:
+        if pid_alive(pid):
+            terminate(pid)
+    for _ in range(10):
+        if not any(pid_alive(pid) for pid in targets):
+            return True
+        time.sleep(0.3)
+    return False
+
+
 def clear_runtime_record() -> None:
     PID_FILE.unlink(missing_ok=True)
     RUNTIME_RECORD_FILE.unlink(missing_ok=True)
+
+
+def _stop_without_record() -> int:
+    """Fallback when no structured launcher record exists.
+
+    The instance may have been started directly (``python main.py``) rather
+    than through the launcher. Identity is still pinned conservatively: the
+    loopback health probe must identify this app, and the owning PID must run
+    the project venv interpreter with a backend command line. Anything else is
+    left alone.
+    """
+    corrupt = RUNTIME_RECORD_FILE.exists()
+    if not _health_app_matches(DEFAULT_HOST, DEFAULT_PORT):
+        if corrupt:
+            print("[工作台] 运行记录损坏，且端口上未识别到本工作台，未结束进程，请人工检查。")
+            return 1
+        print("[工作台] 未找到运行记录，端口上也未识别到本工作台，工作台可能已经停止。")
+        return 0
+
+    candidates = [pid for pid in _listening_pids(DEFAULT_PORT) if pid_alive(pid)]
+    targets: list[int] = []
+    for pid in candidates:
+        ok, reason = identify_loose(pid)
+        if ok:
+            targets.append(pid)
+        else:
+            print(f"[工作台] 端口 {DEFAULT_PORT} 上的进程 {pid} 身份不符（{reason}），已保留现场。")
+
+    if not targets:
+        print("[工作台] 健康检查识别到本工作台，但未找到可确认身份的后端进程，请人工检查。")
+        return 1
+
+    tree = sorted({pid for root in targets for pid in [root, *descendant_pids(root)]})
+    if not _terminate_tree(tree):
+        print(f"[工作台] 进程 {targets[0]} 仍在运行，请手动确认。")
+        return 1
+
+    clear_runtime_record()
+    print(f"[工作台] 已停止工作台进程 {targets[0]}（含其子进程），未影响其他服务。")
+    return 0
 
 
 def main() -> int:
     record = read_runtime_record()
 
     if record is None:
-        # No structured record: either already stopped, or the record is
-        # corrupt. Either way fail closed — do not kill a PID we cannot verify.
-        if RUNTIME_RECORD_FILE.exists():
-            print("[工作台] 运行记录损坏，未执行结束操作，请人工检查。")
-            return 1
-        if not PID_FILE.exists():
-            print("[工作台] 未找到运行记录，工作台可能已经停止。")
-            return 0
-        # Only a legacy plain PID file remains; without identity evidence we
-        # do not terminate.
-        print("[工作台] 缺少结构化运行记录，未执行结束操作，请人工检查。")
-        return 1
+        # No structured record (never launched via the launcher, or corrupt).
+        # Fall back to health-probe + venv-executable identity instead of
+        # giving up outright; see _stop_without_record for the safety model.
+        return _stop_without_record()
 
     try:
         root_pid = int(record.get("pid"))
@@ -309,18 +440,7 @@ def main() -> int:
         return 1
 
     targets = [root_pid, *descendant_pids(root_pid)]
-    for pid in targets:
-        if pid_alive(pid):
-            terminate(pid)
-
-    stopped = False
-    for _ in range(10):
-        if not any(pid_alive(pid) for pid in targets):
-            stopped = True
-            break
-        time.sleep(0.3)
-
-    if not stopped:
+    if not _terminate_tree(targets):
         print(f"[工作台] 进程 {root_pid} 仍在运行，请手动确认。")
         return 1
 

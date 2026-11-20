@@ -90,7 +90,6 @@ def _good_record(stopper, **overrides):
         "pid": 12345,
         "creation_date": "2026-01-01T00:00:00.000000Z",
         "executable_path": venv,
-        "working_directory": str(stopper.BACKEND_DIR),
         "command_line": [
             venv, "-m", "uvicorn", "main:app",
             "--host", "127.0.0.1", "--port", "8000",
@@ -108,7 +107,6 @@ def _good_info(stopper, **overrides):
         "ExecutablePath": venv,
         "CommandLine": f'"{venv}" -m uvicorn main:app --host 127.0.0.1 --port 8000',
         "CreationDate": "2026-01-01T00:00:00.000000Z",
-        "WorkingDirectory": str(stopper.BACKEND_DIR),
     }
     info.update(overrides)
     return info
@@ -241,3 +239,88 @@ def test_stopper_rejects_missing_instance_env(monkeypatch):
     matches, reason = stopper.identify_workbench(12345, _good_record(stopper))
     assert matches is False
     assert "实例标识" in reason
+
+
+def test_stopper_accepts_backend_command_forms():
+    stopper = _load("stopper", "workbench_stopper.py")
+    venv = str(stopper.VENV_PYTHON).lower().replace("/", "\\")
+    assert stopper._is_backend_command(f'"{venv}" -m uvicorn main:app --port 17890') is True
+    assert stopper._is_backend_command(f'"{venv}" main.py') is True
+    assert stopper._is_backend_command(f'"{venv}" -m http.server 9999') is False
+    assert stopper._is_backend_command("") is False
+
+
+def test_stopper_identify_loose_accepts_direct_entry(monkeypatch):
+    stopper = _load("stopper", "workbench_stopper.py")
+    venv = str(stopper.VENV_PYTHON).lower().replace("/", "\\")
+    monkeypatch.setattr(
+        stopper, "_process_info",
+        lambda pid: {
+            "ExecutablePath": venv,
+            "CommandLine": f'"{venv}" main.py',
+            "CreationDate": "2026-01-01T00:00:00.000000Z",
+        },
+    )
+    matches, reason = stopper.identify_loose(4321)
+    assert matches is True
+    assert "兜底" in reason
+
+
+def test_stopper_identify_loose_rejects_other_python(monkeypatch):
+    stopper = _load("stopper", "workbench_stopper.py")
+    monkeypatch.setattr(
+        stopper, "_process_info",
+        lambda pid: {
+            "ExecutablePath": "C:/OtherApp/python.exe",
+            "CommandLine": "python -m http.server 9999",
+            "CreationDate": "2026-01-01T00:00:00.000000Z",
+        },
+    )
+    matches, _ = stopper.identify_loose(4321)
+    assert matches is False
+
+
+def test_stopper_fallback_stops_matched_process(monkeypatch):
+    stopper = _load("stopper", "workbench_stopper.py")
+    monkeypatch.setattr(stopper, "_health_app_matches", lambda h, p: True)
+    monkeypatch.setattr(stopper, "_listening_pids", lambda port: [4321])
+    monkeypatch.setattr(stopper, "pid_alive", lambda pid: True)
+    monkeypatch.setattr(stopper, "identify_loose", lambda pid: (True, "兜底"))
+    monkeypatch.setattr(stopper, "descendant_pids", lambda pid: [])
+    terminated: list[list[int]] = []
+    monkeypatch.setattr(stopper, "_terminate_tree",
+                        lambda tree: terminated.append(tree) or True)
+    monkeypatch.setattr(stopper, "clear_runtime_record", lambda: None)
+
+    assert stopper._stop_without_record() == 0
+    assert terminated == [[4321]]
+
+
+def test_stopper_fallback_leaves_unmatched_process(monkeypatch):
+    stopper = _load("stopper", "workbench_stopper.py")
+    monkeypatch.setattr(stopper, "_health_app_matches", lambda h, p: True)
+    monkeypatch.setattr(stopper, "_listening_pids", lambda port: [4321])
+    monkeypatch.setattr(stopper, "pid_alive", lambda pid: True)
+    monkeypatch.setattr(stopper, "identify_loose",
+                        lambda pid: (False, "不属于项目 .venv"))
+    terminated = []
+    monkeypatch.setattr(stopper, "_terminate_tree",
+                        lambda tree: terminated.append(tree) or True)
+
+    assert stopper._stop_without_record() == 1
+    assert terminated == []
+
+
+def test_stopper_fallback_no_health_match_does_not_touch(monkeypatch):
+    stopper = _load("stopper", "workbench_stopper.py")
+    monkeypatch.setattr(stopper, "_health_app_matches", lambda h, p: False)
+    listed: list[int] = []
+    monkeypatch.setattr(stopper, "_listening_pids",
+                        lambda port: listed.append(port) or [])
+    terminated = []
+    monkeypatch.setattr(stopper, "_terminate_tree",
+                        lambda tree: terminated.append(tree) or True)
+
+    assert stopper._stop_without_record() == 0
+    assert listed == []
+    assert terminated == []

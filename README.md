@@ -84,8 +84,9 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
 - 启动：双击 `启动工作台.bat`（等价于 `python scripts/workbench_launcher.py`）。
   服务在后台运行，健康检查通过后自动在默认浏览器打开 `http://127.0.0.1:17890`。
 - 停止：双击 `停止工作台.bat`（等价于 `python scripts/workbench_stopper.py`）。
-  停止器按 PID + 进程身份记录回收工作台进程树，不按名称批量结束 Python，也不触碰
-  Ollama / ComfyUI。
+  停止器按 PID + 进程身份记录回收工作台进程树；没有启动记录时，先经健康探针确认是本工作台，
+  再核对监听进程的 venv 解释器与命令行入口，身份不符一律保留现场。不按名称批量结束 Python，
+  也不触碰 Ollama / ComfyUI。
 - 可选环境变量：`WORKBENCH_HOST`（仅允许回环地址）、`WORKBENCH_PORT`（默认 17890）、
   `WORKBENCH_OPEN_BROWSER=0`（启动后不自动开浏览器）。
 
