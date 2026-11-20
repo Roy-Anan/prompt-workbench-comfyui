@@ -79,11 +79,16 @@ _root_lock = threading.Lock()
 
 # Local-only origins allowed by CORS. The production Web runtime is same-origin
 # (FastAPI serves both API and frontend), so no broad LAN/public origin is added.
+# The ComfyUI loopback origins are included so the external extension sidebar
+# panel can reach the health probe over loopback; read-only data endpoints still
+# require a session or the node token.
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:17890",
     "http://localhost:17890",
     "http://127.0.0.1:1420",
     "http://localhost:1420",
+    "http://127.0.0.1:8188",
+    "http://localhost:8188",
 }
 
 # Per-session tickets handed to the browser via an HttpOnly cookie. They are

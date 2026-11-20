@@ -82,3 +82,16 @@ def test_node_token_reused_across_reload(client):
     first = main.NODE_TOKEN
     second = datadir.load_or_create_node_token(main.DATA_ROOT)
     assert second == first
+
+
+def test_comfyui_loopback_origin_allowed_for_health_probe(client):
+    test_client, _ = client
+
+    resp = test_client.get(
+        "/api/health", headers={"Origin": "http://127.0.0.1:8188"}
+    )
+    assert resp.status_code == 200
+    assert (
+        resp.headers.get("access-control-allow-origin")
+        == "http://127.0.0.1:8188"
+    )
