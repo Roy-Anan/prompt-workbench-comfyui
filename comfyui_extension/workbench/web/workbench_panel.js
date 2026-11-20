@@ -381,6 +381,8 @@ function applyComboOptions(widget, options) {
     widget.options = opts;
   } else if (widget.options && typeof widget.options === "object") {
     widget.options.values = opts;
+  } else {
+    widget.options = opts;
   }
 }
 
@@ -423,9 +425,66 @@ function bindPickerNode(node) {
   }
 }
 
+function safeGraph(app) {
+  // app.graph throws "accessed before initialization" early in startup; guard
+  // every access so a not-ready graph degrades to "bind later" instead of
+  // breaking the extension setup.
+  try {
+    return app && app.graph;
+  } catch (e) {
+    return null;
+  }
+}
+
+function bindAllExisting(app) {
+  const graph = safeGraph(app);
+  const nodes = (graph && graph._nodes) || [];
+  for (const node of nodes) bindPickerNode(node);
+}
+
 app.registerExtension({
   name: "WorkbenchNodePickers",
+
+  // Compatibility: older frontend builds dispatch nodeCreated directly.
   nodeCreated(node) {
     if (PICKER_NODE_TYPES.includes(node.type)) bindPickerNode(node);
+  },
+
+  // Reliable hook on this frontend build: wrap the prototype onAdded so a
+  // freshly dropped node binds its pickers once its widgets exist.
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    const typeName = nodeData && (nodeData.name || nodeData.comfyClass);
+    if (!PICKER_NODE_TYPES.includes(typeName)) return;
+    const onAdded = nodeType.prototype.onAdded;
+    nodeType.prototype.onAdded = function () {
+      if (onAdded) onAdded.apply(this, arguments);
+      const node = this;
+      setTimeout(() => bindPickerNode(node), 30);
+    };
+  },
+
+  // Fallback: bind nodes restored from an already-loaded workflow, and keep
+  // binding anything added later through the graph nodeAdded event. The graph
+  // may not exist yet during setup, so poll until it is ready.
+  setup(app) {
+    let nodeAddedBound = false;
+    const tryBind = () => {
+      const graph = safeGraph(app);
+      if (!graph) {
+        requestAnimationFrame(tryBind);
+        return;
+      }
+      if (!nodeAddedBound) {
+        try {
+          graph.on("nodeAdded", bindPickerNode);
+        } catch (e) {
+          // Graph event API unavailable in this build; onAdded/setup fallback
+          // still covers nodes present on the canvas.
+        }
+        nodeAddedBound = true;
+      }
+      bindAllExisting(app);
+    };
+    requestAnimationFrame(tryBind);
   },
 });
