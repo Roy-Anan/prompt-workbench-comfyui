@@ -100,9 +100,12 @@
 
 ### 输出项
 
-- `positive_text`：带头信息（模式、模型、身份、命中的 Profile / 题材 / 文风）+ 生成的候选；写作 / 裸模型结果也走这一口。
-- `negative_text`：`negative` 负向补全模式的结果；其余模式留空。
+- `positive_text`：带头信息（模式、模型、身份、命中的 Profile / 题材 / 文风）+ 生成的候选；写作 / 裸模型结果也走这一口。**给人看的**。
+- `negative_text`：`negative` 负向补全模式的结果（带同样头信息）；其余模式留空。
+- `clean_positive` / `clean_negative`：**纯净正文**，不带任何头信息；哪个口有值由 `mode` 决定（`negative` 走 `clean_negative`，其余走 `clean_positive`）。可直接接 CLIPTextEncode，或复制回工作台做安全写入，不会被模式/模型等说明文字污染。
 - `raw_json`：后端原始返回。
+
+> 提示：要出图或回写，用 `clean_positive` / `clean_negative`；要当场核对"这是谁、用哪套规则生成的"，看 `positive_text` / `negative_text`。
 
 **注意**：
 - `model` 必填；`workflow_id` 可留空。身份、规则套、题材、文风各槽位都可留空，全空即原汁原味裸模型直连。
@@ -115,8 +118,9 @@
 
 ```text
 工作台规则上下文 ──context_text──▶ （人看 / 接到后续文本节点）
-工作台提示词候选生成 ──positive_text──▶ （人审核，采纳后回工作台写回工作副本）
-                    └──negative_text──▶ （负向补全结果，接到负向编码节点）
+工作台提示词候选生成 ──clean_positive──▶ CLIPTextEncode 正向文本
+                    └──clean_negative──▶ CLIPTextEncode 负向文本
+                    （positive_text / negative_text 留给人核对来源）
 出图前：工作台释放显存/卸载LLM ──status_text──▶ （确认显存清场后再提交出图）
 ```
 

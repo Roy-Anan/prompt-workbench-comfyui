@@ -30,6 +30,7 @@
 - **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门）。图片可从素材库挑选（历史只引用 `asset_id`、不存副本），也可本地上传临时图（临时图不进历史、不留图）；识别结果可连同素材引用主动存入图生文历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**已真机跑通识别**：由同源 Qwen3-VL-8B-Instruct 视觉投影器（mmproj Q8_0，ModelScope 官方 GGUF 仓库）与本机 heretic 语言权重组装出新标签 `qwen3-vl:latest`，工作台页签上传图片可返回中文描述；纯文本底模与未挂投影器的 `qwen3:latest` 被精确过滤、不进下拉。
 - **统一生成历史（2026-11-20）**：历史页签聚合三类记录——提示词（沿用 `generation_history`，仅出图任务）、图生文（新表 `vision_history`，素材引用）、写作（新表 `writing_history`，仅主动保存落库）；后端 `GET /api/history/all` 按分项聚合并返回计数，`DELETE /api/history/{kind}/{id}` 彻底删除（不做回收站，不联动草稿/素材原图/ComfyUI 原图）。三类各一张表、同一 SQLite 库，随整库备份自动纳入。
 - **画布节点动态字段改为自由文本（R143，2026-11-21）**：候选/规则上下文节点上的 `workflow_id`、`model`、`persona`、`prompt_profile`、`genre`、`style` 原为 combo，真实选项来自工作台后端、Python 节点静态占位列表过不了 ComfyUI 枚举校验，提交时报 `Value not in list`；现改为 STRING 自由文本，后端不做枚举校验，扩展前端脚本只拉取列表用于回填合法值并记忆上次选择，旧工作流里残留的 `标签,值` 复合串会被自动替换。固定枚举 `mode`/`source`/`level` 仍保留下拉。工作台网页端的各类下拉不受影响。
+- **候选节点拆纯净正文输出口（R144，2026-11-21）**：`WorkbenchPromptCandidate` 在保留 `positive_text`/`negative_text`（带模式/模型/身份/Profile/题材/文风头信息，供人核对来源）基础上，新增 `clean_positive`/`clean_negative` 两路纯净正文输出——只含候选正文、无头信息，错误或空结果时为空串，可直接接 CLIPTextEncode，或复制回工作台做安全写入而不污染正文。输出口由 3 个扩到 5 个（向后兼容，旧接线不受影响）；扩展测试同步断言。
 - **已知环境型测试失败（非回归，勿改测试逻辑）**：
   - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。
   - `test_sidebar_summary.py::test_empty_sections_report_zero_totals`：读到本机真实非零计数。

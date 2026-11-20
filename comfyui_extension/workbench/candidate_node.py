@@ -13,9 +13,12 @@ Identity model (see ``THREE_SLICE_SPEC.md``):
 - ``workflow_id`` is optional: leave it empty for a standalone bare-model or
   writing round. When a workflow is bound the backend pre-selects a default
   rule profile, but the profile slot still has its own three states.
-- The node exposes three outputs: ``positive_text``, ``negative_text`` and
-  ``raw_json``. A writing / bare-model result lands in ``positive_text``; a
-  negative-mode result lands in ``negative_text``.
+- The node exposes five outputs: ``positive_text`` / ``negative_text`` carry
+  the human-readable header plus the prompt body; ``raw_json`` carries the
+  backend payload; ``clean_positive`` / ``clean_negative`` carry only the
+  prompt body so they can be wired straight into a CLIPTextEncode or copied
+  back to the workbench for a safe write. A writing / bare-model result lands
+  in the positive ports; a negative-mode result lands in the negative ports.
 """
 
 from __future__ import annotations
@@ -87,8 +90,14 @@ class WorkbenchPromptCandidate:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING")
-    RETURN_NAMES = ("positive_text", "negative_text", "raw_json")
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = (
+        "positive_text",
+        "negative_text",
+        "raw_json",
+        "clean_positive",
+        "clean_negative",
+    )
     FUNCTION = "generate"
     CATEGORY = "Workbench/LLM"
 
@@ -117,6 +126,8 @@ class WorkbenchPromptCandidate:
                 "[workbench] 未填写本地 Ollama 模型名。",
                 "",
                 "{}",
+                "",
+                "",
             )
 
         body: dict[str, Any] = {"model": model}
@@ -161,6 +172,8 @@ class WorkbenchPromptCandidate:
                 f"[workbench] 候选生成失败：{data['error']}",
                 "",
                 json.dumps(data, ensure_ascii=False),
+                "",
+                "",
             )
 
         candidates = data.get("candidates") or []
@@ -170,6 +183,8 @@ class WorkbenchPromptCandidate:
                 f"[workbench] 未生成候选：{detail}",
                 "",
                 json.dumps(data, ensure_ascii=False),
+                "",
+                "",
             )
 
         mode_label = MODE_LABELS.get(mode_value, mode_value)
@@ -192,17 +207,25 @@ class WorkbenchPromptCandidate:
             header += f"｜文风 {data['style']}"
 
         candidate = f"{header}\n{candidates[0]}"
-        # Negative-mode output goes to the negative port; everything else to
-        # the positive port. The negative port stays empty for writing/bare
-        # rounds.
+        body_text = candidates[0]
+        raw = json.dumps(data, ensure_ascii=False)
+        # Negative-mode output goes to the negative ports; everything else to
+        # the positive ports. The *_text ports keep the human-readable header;
+        # the clean_* ports carry only the prompt body, never a header or an
+        # error message, so they are safe to wire into a CLIPTextEncode or copy
+        # back for a workbench safe write.
         if mode_value == "negative":
             positive_text, negative_text = "", candidate
+            clean_positive, clean_negative = "", body_text
         else:
             positive_text, negative_text = candidate, ""
+            clean_positive, clean_negative = body_text, ""
         return (
             positive_text,
             negative_text,
-            json.dumps(data, ensure_ascii=False),
+            raw,
+            clean_positive,
+            clean_negative,
         )
 
 

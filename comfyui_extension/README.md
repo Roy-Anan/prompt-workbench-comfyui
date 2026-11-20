@@ -129,7 +129,10 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    `workflow_id` 拉取后端已解析的规则上下文（已解析字段/冲突/未覆盖/口径说明），
    `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate`
    同按 `workflow_id` 调后端五模式本地候选，规则、现有提示词、受保护术语
-   均由后端按 id 取齐，候选只回画布、不写回草稿。
+   均由后端按 id 取齐，候选只回画布、不写回草稿。输出分两套：`positive_text` /
+   `negative_text` 带来源头信息（模式/模型/身份/Profile/题材/文风）供人核对，
+   `clean_positive` / `clean_negative` 只带正文，可直接接 CLIPTextEncode 或
+   复制回工作台做安全写入。
 5. **画布桥：动态字段回填与记忆**（已落地）：节点的 `workflow_id`、候选节点的
    `model`（本地 Ollama 模型）、`persona`、`prompt_profile`、`genre`、`style`
    均为 STRING 自由文本——combo 的静态占位列表过不了 ComfyUI 后端枚举校验，

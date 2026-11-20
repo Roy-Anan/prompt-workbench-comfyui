@@ -303,8 +303,14 @@ def test_extension_registers_candidate_node():
     assert "WorkbenchPromptCandidate" in ext.NODE_CLASS_MAPPINGS
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
     assert cls.CATEGORY == "Workbench/LLM"
-    assert cls.RETURN_TYPES == ("STRING", "STRING", "STRING")
-    assert cls.RETURN_NAMES == ("positive_text", "negative_text", "raw_json")
+    assert cls.RETURN_TYPES == ("STRING", "STRING", "STRING", "STRING", "STRING")
+    assert cls.RETURN_NAMES == (
+        "positive_text",
+        "negative_text",
+        "raw_json",
+        "clean_positive",
+        "clean_negative",
+    )
     assert (
         ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchPromptCandidate"]
         == "工作台提示词候选生成"
@@ -317,9 +323,13 @@ def test_candidate_node_requires_model_only():
 
     # An empty workflow_id is a valid standalone round; only the model is
     # mandatory.
-    positive, negative, raw = node.generate("", "", "draft", "任务", "", "")
+    positive, negative, raw, clean_positive, clean_negative = node.generate(
+        "", "", "draft", "任务", "", ""
+    )
     assert "模型名" in positive
     assert negative == ""
+    assert clean_positive == ""
+    assert clean_negative == ""
 
 
 def test_candidate_node_renders_candidate(monkeypatch):
@@ -332,7 +342,7 @@ def test_candidate_node_renders_candidate(monkeypatch):
     )
 
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    positive, negative, raw = node.generate(
+    positive, negative, raw, clean_positive, clean_negative = node.generate(
         "wf-1", "qwen3:latest", "polish", "优化一下", "", ""
     )
 
@@ -340,6 +350,9 @@ def test_candidate_node_renders_candidate(monkeypatch):
     assert negative == ""
     assert "qwen3" in positive
     assert '"candidates"' in raw
+    # Clean ports carry only the prompt body, never the header metadata.
+    assert clean_positive == "润色后的提示词"
+    assert clean_negative == ""
 
 
 def test_candidate_node_passes_sampling_options(monkeypatch):
@@ -393,9 +406,14 @@ def test_candidate_node_reports_backend_error(monkeypatch):
         lambda wid, body, base="", tok="": {"error": "队列有待执行任务", "status": 409},
     )
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    positive, negative, raw = node.generate("wf-1", "m", "draft", "任务", "", "")
+    positive, negative, raw, clean_positive, clean_negative = node.generate(
+        "wf-1", "m", "draft", "任务", "", ""
+    )
     assert "队列有待执行任务" in positive
     assert "409" in raw
+    # Errors stay out of the clean ports so they cannot be written back as a prompt.
+    assert clean_positive == ""
+    assert clean_negative == ""
 
 
 def test_candidate_node_workflow_id_is_free_text():
@@ -484,9 +502,13 @@ def test_candidate_node_negative_goes_to_negative_port(monkeypatch):
         lambda wid, body, base="", tok="": {"model": "m", "candidates": ["lowres, bad hands"]},
     )
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    positive, negative, raw = node.generate("wf-1", "m", "negative", "补负向", "", "")
+    positive, negative, raw, clean_positive, clean_negative = node.generate(
+        "wf-1", "m", "negative", "补负向", "", ""
+    )
     assert positive == ""
     assert "bad hands" in negative
+    assert clean_positive == ""
+    assert clean_negative == "lowres, bad hands"
 
 
 def test_candidate_node_standalone_sends_empty_workflow_id(monkeypatch):
