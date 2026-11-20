@@ -3990,6 +3990,39 @@
 - **`.invalid` 表单错误态**、深色令牌逐处精调、独立 Toast、三档分辨率真机复核，
   维持 160.3 后置结论。
 
+## 162. 本机 LLM 环境梳理与候选生成真机验收（2026-11-20）
+
+### 162.1 本机 Ollama 环境口径
+
+- Ollama 客户端已装（0.40.15）；模型实际存储在 **`D:\AI\MODELS`**（不是默认
+  `C:\Users\<user>\.ollama\models`，后者为空）。`/api/tags` 可见：
+  - `qwen2.5:3b`（1.84 GB，本轮新拉，Q4）；
+  - `comfyui-prompt:v1`（4.8 GB，提示词专用本地模型）；
+  - `qwen3:latest`（4.8 GB）。
+- 后端默认 `ollama_url=http://127.0.0.1:11434`，与本机回环 serve 对齐。
+- 环境注意：用户级 `OLLAMA_HOST` 曾指向不可达远端 `10.212.135.209:11434`；
+  本机起 serve 需显式 `OLLAMA_HOST=127.0.0.1:11434`、`OLLAMA_MODELS=D:\AI\MODELS`。
+  托盘 `ollama app` 自启的 serve 默认读空目录，会导致 tags 看不到模型。
+
+### 162.2 候选生成真机验收（通过）
+
+- 起后端 17890；node token 对已确认 API 工作流 `36e013df…` POST
+  `/api/workflows/{id}/prompt/candidates`，`model=qwen2.5:3b`、`mode=draft`。
+- **HTTP 200，约 7.7 秒**返回真实候选（英文 SDXL 标签组合）；
+  `rule_status=unregistered`（该工作流 checkpoint 未注册规则），无 conflicts / unknown。
+- **未写回复核**：该工作流草稿列表仅既有两条，候选未落草稿、未改规则；
+  `/api/ps` 无驻留模型——`keep_alive:0` 一轮结束即释放显存。
+- 观察：qwen2.5:3b 生成质量一般（中英混杂、夹带无意义标签），属小模型能力
+  限制，非后端缺陷；提示词专用的 `comfyui-prompt:v1` 留待后续对比效果。
+
+### 162.3 仍后置
+
+- 节点动态下拉 / 画布自动感知、`.invalid` 校验态、深色精调、独立 Toast、
+  三档分辨率复核，结论同 160.3 / 161.3。
+- 出图闭环（提交 ComfyUI 队列、底模加载、成图回写历史）本轮未跑；候选链路
+  已真机打通，出图链路待有真实出图需求时再验。
+
+
 
 
 
