@@ -42,7 +42,7 @@ def test_rule_context_node_shape():
     }
     assert types["required"]["source"][0] == ["workflow", "rules"]
     assert types["required"]["level"][0] == ["checkpoint", "architecture", "global"]
-    assert types["required"]["workflow_id"][0] == [""]
+    assert types["required"]["workflow_id"][0] == "STRING"
 
 
 def test_client_reports_error_without_backend(monkeypatch):
@@ -288,11 +288,11 @@ def test_rule_context_rules_renders_items(monkeypatch):
     assert '"items"' in raw
 
 
-def test_rule_context_workflow_id_is_combo_placeholder():
+def test_rule_context_workflow_id_is_free_text():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
-    # Seeded combo; the extension JS fills real options from the backend list.
-    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]
+    # Free-text id; backend list options are only remembered by the extension JS.
+    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == "STRING"
 
 
 # --- Prompt candidate node -------------------------------------------------
@@ -398,24 +398,24 @@ def test_candidate_node_reports_backend_error(monkeypatch):
     assert "409" in raw
 
 
-def test_candidate_node_workflow_id_is_combo_placeholder():
+def test_candidate_node_workflow_id_is_free_text():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
-    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]
+    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == "STRING"
 
 
-def test_candidate_node_model_is_combo_placeholder():
+def test_candidate_node_model_is_free_text():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
-    # Seeded combo; the extension JS fills local Ollama model names.
-    assert cls.INPUT_TYPES()["required"]["model"][0] == [""]
+    # Free-text model name; the extension JS remembers the last chosen model.
+    assert cls.INPUT_TYPES()["required"]["model"][0] == "STRING"
 
 
-def test_candidate_node_profile_combo_defaults_auto():
+def test_candidate_node_profile_free_text_defaults_auto():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
     profile = cls.INPUT_TYPES()["optional"]["prompt_profile"]
-    assert profile[0] == ["auto"]
+    assert profile[0] == "STRING"
     assert profile[1]["default"] == "auto"
 
 

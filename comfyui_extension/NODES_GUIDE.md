@@ -43,7 +43,7 @@
 | 输入 | 填什么 | 哪个模式用 |
 | --- | --- | --- |
 | `source` | `workflow` 或 `rules`，切换上面两种看法 | 都用 |
-| `workflow_id` | 工作流编号；下拉会自动列出工作台里的工作流，也可以手填 | 仅 `workflow` 模式 |
+| `workflow_id` | 工作流编号（文本框，填后端 id，可在工作台工作流页复制）；扩展会记住上次填写的值 | 仅 `workflow` 模式 |
 | `level` | 规则层级：`checkpoint` / `architecture` / `global` | 仅 `rules` 模式 |
 | `scope_key` | 规则归属的关键字（一般留空即可） | 仅 `rules` 模式 |
 | `backend_url` | 工作台地址，留空走默认 `127.0.0.1:17890` | 都用 |
@@ -87,14 +87,14 @@
 
 | 输入 | 填什么 |
 | --- | --- |
-| `workflow_id` | 可选。绑定工作流时下拉自动列出后端登记的工作流；**留空**则走独立轮次（不绑定工作流的裸模型 / 写作） |
-| `model` | 必填。本地 Ollama 模型；下拉自动列出本机已装模型（如 `qwen3:latest`），也可手填 |
-| `persona` | 身份下拉；首项 `无（裸模型）` 表示不注入身份系统提示词，其余为已登记身份（提示词类 / 写作类） |
-| `mode` | 创作模式：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `bilingual` 中英对照 / `negative` 负向补全 / `none` 无模式指令 |
+| `workflow_id` | 可选。绑定工作流时填后端工作流 id（文本框，可在工作台工作流页复制）；**留空**则走独立轮次（不绑定工作流的裸模型 / 写作） |
+| `model` | 必填。本地 Ollama 模型名（文本框，如 `qwen3:latest`）；扩展会记住上次填写的模型 |
+| `persona` | 身份文本框：`none` 表示不注入身份系统提示词，其余填已登记身份 id（如 `prompt_assistant` / `writing_assistant`） |
+| `mode` | 创作模式（下拉固定枚举）：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `bilingual` 中英对照 / `negative` 负向补全 / `none` 无模式指令 |
 | `task` | 这次想让它干什么（一句话要求，可留空） |
 | `backend_url` / `token` | 同前，一般留空 |
-| `prompt_profile` | 规则套下拉：`auto（自动匹配）` 按底模/架构自动匹配，`none（不使用规则套）` 跳过该层，其余为已登记 Profile；**仅提示词身份生效**，写作身份自动忽略 |
-| `genre` / `style` | 写作类题材 / 文风下拉；仅写作身份有意义，留空表示不叠加该层 |
+| `prompt_profile` | 规则套文本框：`auto` 按底模/架构自动匹配，`none` 跳过该层，其余填已登记 Profile id；**仅提示词身份生效**，写作身份自动忽略 |
+| `genre` / `style` | 写作类题材 / 文风文本框，填对应 id；仅写作身份有意义，留空表示不叠加该层 |
 | `positive_in` / `negative_in` | 可选，把画布上现有的正向 / 负向词一并带给模型做润色补全 |
 | `temperature` / `top_p` / `num_ctx` | 采样参数；留默认（`-1`）表示不传给后端，用后端默认值 |
 

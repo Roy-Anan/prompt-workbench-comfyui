@@ -301,15 +301,16 @@ app.registerExtension({
   },
 });
 
-// --- Node pickers: dynamic combo options on workbench nodes -----------------
+// --- Node pickers: last-choice memory for dynamic string fields -------------
 //
-// The Python nodes seed their combos with placeholder values because
-// instance-time Python cannot fetch the backend lists. This side script reads
-// the imported workflows, local Ollama models and Prompt Profiles through the
-// same read-only proxy and fills the combo options once the canvas loads. The
-// last choice for each field is remembered locally so a freshly added node
-// reuses it. Nodes never write back to the backend; draft/rule editing stays in
-// the workbench web app.
+// The dynamic fields are plain STRING widgets on the Python side: a combo would
+// be validated against a static placeholder list that cannot know the backend
+// ids, so the nodes keep free-text entry. This side script reads the imported
+// workflows, local Ollama models and Prompt Profiles through the same
+// read-only proxy, recovers a valid value when the current text is stale, and
+// remembers the last choice locally so a freshly added node reuses it. Nodes
+// never write back to the backend; draft/rule editing stays in the workbench web
+// app.
 
 const PICKER_NODE_TYPES = ["WorkbenchRuleContext", "WorkbenchPromptCandidate"];
 
@@ -351,60 +352,16 @@ async function fetchPickerList(suffix) {
   return pickerCache[suffix];
 }
 
-// Each option is a ``[display label, stable value]`` pair: the dropdown shows
-// the readable label while the node still receives the backend id / model name.
-function workflowOption(item) {
-  const id = item.id || "";
-  const short = String(id).slice(0, 8);
-  const name = item.filename || short;
-  const confirmed = item.confirmed ? " · 已确认" : "";
-  return [`${name} (${short})${confirmed}`, id];
-}
-
-function modelOption(item) {
-  const detail = item.detail ? ` · ${item.detail}` : "";
-  return [`${item.id}${detail}`, item.id];
-}
-
-function profileOption(item) {
-  const arch = item.architecture ? ` · ${item.architecture}` : "";
-  const off = item.enabled === false ? " · 已停用" : "";
-  const label = item.display_name || item.id;
-  return [`${label}${arch}${off}`, item.id];
-}
-
-function profileOptions(items) {
-  return [["auto（自动匹配）", "auto"], ...items.map(profileOption)];
-}
-
-function personaOption(item) {
-  const label = item.display_name || item.id;
-  return [label, item.id];
-}
-
-function personaOptions(items) {
-  return [["无（裸模型）", "none"], ...items.map(personaOption)];
-}
-
-function layerOption(item) {
-  const label = item.display_name || item.id;
-  return [label, item.id];
-}
-
-function layerOptions(items) {
-  return [["不指定", ""], ...items.map(layerOption)];
-}
-
-function applyComboOptions(widget, options) {
-  if (!widget) return;
-  const opts = options.length ? options : [["", ""]];
-  if (Array.isArray(widget.options)) {
-    widget.options = opts;
-  } else if (widget.options && typeof widget.options === "object") {
-    widget.options.values = opts;
-  } else {
-    widget.options = opts;
-  }
+// The dynamic fields are plain STRING widgets on the Python side (a combo would
+// be validated against a static placeholder list that cannot know the backend
+// ids). Here we only read the backend list to recover a valid value and remember
+// the last choice; the widget keeps its free-text entry.
+function valuesFor(widgetName, items) {
+  const ids = (items || []).map((item) => item.id || "").filter(Boolean);
+  if (widgetName === "persona") return ["none", ...ids];
+  if (widgetName === "genre" || widgetName === "style") return ["", ...ids];
+  if (widgetName === "prompt_profile") return ["auto", ...ids];
+  return ids;
 }
 
 function siblingValue(node, name) {
@@ -417,27 +374,19 @@ function siblingValue(node, name) {
   return "";
 }
 
-function optionsFor(widgetName, items) {
-  if (widgetName === "workflow_id") return items.map(workflowOption);
-  if (widgetName === "model") return items.map(modelOption);
-  if (widgetName === "persona") return personaOptions(items);
-  if (widgetName === "genre" || widgetName === "style") return layerOptions(items);
-  return profileOptions(items);
-}
-
 function bindPickerNode(node) {
   for (const widget of node.widgets || []) {
     const source = PICKER_SOURCES[widget.name];
     if (!source) continue;
 
     void fetchPickerList(source.endpoint).then((items) => {
-      const opts = optionsFor(widget.name, items);
-      applyComboOptions(widget, opts);
-      const values = opts.map((o) => o[1]);
-      if (!values.includes(String(widget.value))) {
+      const values = valuesFor(widget.name, items);
+      const current = String(widget.value ?? "");
+      if (!values.includes(current)) {
         // Reuse a value already bound on this canvas first, then fall back to
         // the last choice remembered in this browser; otherwise the first
-        // (empty / sentinel) option.
+        // (empty / sentinel) value. Stale "label,value" strings saved by an
+        // earlier combo build are replaced here as well.
         const inherited = siblingValue(node, widget.name) || localStorage.getItem(source.storage);
         widget.value = values.includes(inherited) ? inherited : values[0];
       }

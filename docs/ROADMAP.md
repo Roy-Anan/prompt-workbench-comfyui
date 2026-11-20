@@ -691,6 +691,8 @@ ComfyUI/LLM 互斥闸门），结果只读、不写工作副本 / 草稿 / 历�
 
 R142 已落地：三类生成记录统一归档到工作台历史。提示词分项沿用 `generation_history`（仅出图任务，不额外归档未出图的纯候选文字）；新增 `vision_history`（图生文，只引用素材库 `asset_id`、不存图片副本，本地上传临时图不进历史）与 `writing_history`（写作，仅主动点「存入历史」落库，不自动记录每次生成）。三类各一张表、同一 SQLite 库，后端 `GET /api/history/all` 按 `kind` 聚合并返回分项计数，`POST /api/history/vision`、`POST /api/history/writing` 为保存入口，`DELETE /api/history/{kind}/{id}` 两步确认彻底删除（不做回收站，删除不联动草稿、素材原图与 ComfyUI 原图）；历史页签以 chips 分项筛选，图生文卡片回链素材缩略图，写作卡片展示身份/题材/文风/模式/任务与成文。新表随整库备份自动纳入。后端新增 `test_llm_history.py` 9 passed，全量 454 passed（2 项环境型既有失败），前端 tsc/build 绿。
 
+R143 已落地：修复画布工作台候选/规则上下文节点提交校验失败。动态字段（`workflow_id`/`model`/`persona`/`prompt_profile`/`genre`/`style`）原为 combo，真实选项来自工作台后端，Python 节点静态占位列表过不了 ComfyUI 后端枚举校验，报 `Value not in list`；且前端二元组选项被存成 `标签,值` 复合串。现这些字段改为 STRING 自由文本（后端不枚举校验），扩展前端脚本仅拉取列表回填合法值并记忆上次选择，旧复合串自动替换；固定枚举 `mode`/`source`/`level` 仍保留下拉，工作台网页端下拉不受影响。扩展测试同步改为 STRING 类型断言，全量 454 passed（2 项环境型既有失败）。
+
 - **M3 规则引擎**：global 级规则已由引擎三级继承装载；sets 专用/通用套优先级判定已由 R115
   落地；逐候选勾选/驳回已由 R108 落地；规则版本历史查看与回退已由 R116 落地；候选差异预览已由
   R119 落地；多模型与启用 LoRA 组合的冲突人工裁决界面已由 R120 落地。

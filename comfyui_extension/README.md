@@ -17,7 +17,7 @@ comfyui_extension/
    ├─ release_node.py        # 卸载 LLM / 释放显存节点
    ├─ candidate_node.py      # 本地 LLM 提示词候选生成节点
    └─ web/
-      └─ workbench_panel.js  # 侧边栏页签 + 工作流动态下拉/画布内沿用选择器
+      └─ workbench_panel.js  # 侧边栏页签 + 画布动态字段回填/本地记忆
 ```
 
 ## 挂载方式（不污染整合包）
@@ -123,18 +123,20 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    `GET /api/sidebar/summary` 六域脱敏聚合投影；面板改为代理优先、直连
    回退，分区折叠展示工作流（id/标题/确认态）/规则/草稿/素材/LoRA/历史摘要，
    超出条数引导回工作台。节点侧 `backend_client.list_workflows()` 复用
-   `GET /api/workflows` 提供只读清单，为后续下拉选择预留契约。
+   `GET /api/workflows` 提供只读清单，为画布字段回填与记忆预留契约。
 4. **规则上下文节点 + 候选生成节点**（已落地前置切片）：
    `WorkbenchRuleContext` 用 `source` 切换两种只读看法——`workflow` 按输入的
    `workflow_id` 拉取后端已解析的规则上下文（已解析字段/冲突/未覆盖/口径说明），
    `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate`
    同按 `workflow_id` 调后端五模式本地候选，规则、现有提示词、受保护术语
    均由后端按 id 取齐，候选只回画布、不写回草稿。
-5. **画布桥：动态下拉**（已落地）：节点的 `workflow_id`、候选节点的 `model`
-   （本地 Ollama 模型）与 `prompt_profile`（规则模板，首项 `auto`）均为 combo
-   占位，扩展前端经代理分别拉 `/api/workflows`、`/api/ollama/models`、
-   `/api/prompt-profiles` 清单填充选项（`[标签, 值]` 二元组）；新建节点优先
-   沿用同画布已绑定节点的选择，其次回退浏览器本地记忆。完整的
+5. **画布桥：动态字段回填与记忆**（已落地）：节点的 `workflow_id`、候选节点的
+   `model`（本地 Ollama 模型）、`persona`、`prompt_profile`、`genre`、`style`
+   均为 STRING 自由文本——combo 的静态占位列表过不了 ComfyUI 后端枚举校验，
+   故不用下拉；扩展前端经代理分别拉 `/api/workflows`、`/api/ollama/models`、
+   `/api/prompt-profiles`、`/api/personas`、`/api/genres`、`/api/styles` 清单，
+   仅在当前文本非法时回填合法 id，并记忆浏览器本地选择；新建节点优先沿用
+   同画布已绑定节点的选择，其次回退本地记忆。完整的
    graph↔workflow 指纹自动匹配仍后置（画布 graph 与后端 API 工作流结构不同，
    不臆造不可靠绑定）；节点不回写后端，草稿/规则/素材管理留 Web 主阵地。
 6. 后续：节点与画布节点双向读写的深化、当前工作流上下文全自动感知；再评估

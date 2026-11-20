@@ -100,10 +100,10 @@ class WorkbenchRuleContext:
         return {
             "required": {
                 "source": (SOURCES, {"default": "workflow"}),
-                # Combo seeded with an empty placeholder; the extension JS
-                # fills the real workflow options from the backend list once the
-                # canvas loads. Free-text entry stays possible as a fallback.
-                "workflow_id": ([""], {"default": ""}),
+                # Free-text workflow id. The real options live on the workbench
+                # backend; a combo would be validated against a static placeholder
+                # list, so this stays a plain string.
+                "workflow_id": ("STRING", {"default": ""}),
                 "level": (LEVELS, {"default": "global"}),
                 "scope_key": ("STRING", {"default": "", "multiline": False}),
                 "backend_url": ("STRING", {"default": ""}),

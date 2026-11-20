@@ -53,30 +53,31 @@ class WorkbenchPromptCandidate:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                # Combo seeded with an empty placeholder; the extension JS fills
-                # the real workflow options from the backend list once the canvas
-                # loads. Empty means a standalone round (no bound workflow).
-                "workflow_id": ([""], {"default": ""}),
-                # Combo seeded with an empty placeholder; the extension JS fills
-                # the local Ollama model names from the backend list.
-                "model": ([""], {"default": ""}),
+                # Free-text workflow id. The real options live on the workbench
+                # backend; a combo would be validated against a static placeholder
+                # list that cannot know those ids, so this stays a plain string and
+                # the extension JS only remembers the last chosen value. Empty
+                # means a standalone round (no bound workflow).
+                "workflow_id": ("STRING", {"default": ""}),
+                # Free-text local Ollama model name (same rationale as workflow_id).
+                "model": ("STRING", {"default": ""}),
                 "mode": (MODES, {"default": "draft"}),
                 "task": ("STRING", {"default": "", "multiline": True}),
                 "backend_url": ("STRING", {"default": ""}),
             },
             "optional": {
                 "token": ("STRING", {"default": ""}),
-                # Identity layer; the extension JS fills registered personas.
-                # Empty / "none" = bare model, no identity system prompt.
-                "persona": ([""], {"default": ""}),
+                # Identity layer. Empty / "none" = bare model, no identity system
+                # prompt. Free-text id; the extension JS remembers the last choice.
+                "persona": ("STRING", {"default": ""}),
                 # "auto" matches a local Profile by checkpoint / architecture;
-                # "" / "none" skips the profile layer; otherwise pick a backend
-                # Profile id from the combo filled by the extension JS.
-                "prompt_profile": (["auto"], {"default": "auto"}),
+                # "" / "none" skips the profile layer; otherwise a backend
+                # Profile id. Free-text, defaulting to auto.
+                "prompt_profile": ("STRING", {"default": "auto"}),
                 # Writing-class layers; ignored by the backend for prompt-class
                 # identities. Empty means the layer is not injected.
-                "genre": ([""], {"default": ""}),
-                "style": ([""], {"default": ""}),
+                "genre": ("STRING", {"default": ""}),
+                "style": ("STRING", {"default": ""}),
                 # Existing prompts optionally fed into the candidate round.
                 "positive_in": ("STRING", {"default": "", "multiline": True}),
                 "negative_in": ("STRING", {"default": "", "multiline": True}),
