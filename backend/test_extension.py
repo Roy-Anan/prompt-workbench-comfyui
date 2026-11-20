@@ -176,3 +176,167 @@ def test_release_node_reports_error(monkeypatch):
 
     assert "卸载失败" in text
     assert raw == "{}"
+
+
+# --- Workflow rule-context node -------------------------------------------
+
+
+def test_extension_registers_context_node():
+    ext = _load()
+    assert "WorkbenchWorkflowContext" in ext.NODE_CLASS_MAPPINGS
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]
+    assert cls.CATEGORY == "Workbench/Context"
+    assert cls.RETURN_TYPES == ("STRING", "STRING")
+    assert (
+        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchWorkflowContext"]
+        == "工作台工作流规则上下文"
+    )
+
+
+def test_context_node_requires_workflow_id():
+    ext = _load()
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
+    text, raw = node.load_context("", "", "")
+    assert "workflow_id" in text
+    assert raw == "{}"
+
+
+def test_context_node_renders_resolved_and_conflict(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    payload = {
+        "status": "registered",
+        "checkpoint": "x.safetensors",
+        "architecture_label": "SD1.5",
+        "fields": [
+            {"key": "base", "status": "resolved", "value": "SD1.5", "source_level": "architecture"},
+            {"key": "step", "status": "conflict", "message": "两处取值不一致"},
+        ],
+        "conflicts": [],
+        "unknown": [],
+        "instruction": "未提供的参数不要臆造。",
+    }
+    monkeypatch.setattr(
+        backend_client, "workflow_rule_prompt", lambda wid, base="", tok="": payload
+    )
+
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
+    text, raw = node.load_context("wf-1", "", "")
+
+    assert "SD1.5" in text
+    assert "base" in text
+    assert "冲突" in text
+    assert "不要臆造" in text
+    assert '"step"' in raw
+
+
+def test_context_node_reports_backend_error(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    monkeypatch.setattr(
+        backend_client,
+        "workflow_rule_prompt",
+        lambda wid, base="", tok="": {"error": "URLError: x"},
+    )
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
+    text, raw = node.load_context("wf-1", "", "")
+    assert "无法读取规则上下文" in text
+    assert raw == "{}"
+
+
+# --- Prompt candidate node -------------------------------------------------
+
+
+def test_extension_registers_candidate_node():
+    ext = _load()
+    assert "WorkbenchPromptCandidate" in ext.NODE_CLASS_MAPPINGS
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
+    assert cls.CATEGORY == "Workbench/LLM"
+    assert cls.RETURN_TYPES == ("STRING", "STRING")
+    assert (
+        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchPromptCandidate"]
+        == "工作台提示词候选生成"
+    )
+
+
+def test_candidate_node_requires_id_and_model():
+    ext = _load()
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+
+    text, _ = node.generate("", "m", "draft", "任务", "", "")
+    assert "workflow_id" in text
+
+    text, _ = node.generate("wf-1", "", "draft", "任务", "", "")
+    assert "模型名" in text
+
+
+def test_candidate_node_renders_candidate(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    payload = {"model": "qwen3:latest", "mode": "polish", "candidates": ["润色后的提示词"]}
+    monkeypatch.setattr(
+        backend_client, "prompt_candidates", lambda wid, body, base="", tok="": payload
+    )
+
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    text, raw = node.generate("wf-1", "qwen3:latest", "polish", "优化一下", "", "")
+
+    assert "润色后的提示词" in text
+    assert "qwen3" in text
+    assert '"candidates"' in raw
+
+
+def test_candidate_node_passes_sampling_options(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    captured: dict = {}
+
+    def fake_post(wid, body, base="", tok=""):
+        captured.update(body)
+        return {"model": body["model"], "candidates": ["x"]}
+
+    monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    node.generate("wf-1", "m", "draft", "任务", "", "", 0.7, 0.9, 4096)
+
+    assert captured["temperature"] == 0.7
+    assert captured["top_p"] == 0.9
+    assert captured["num_ctx"] == 4096
+
+
+def test_candidate_node_omits_unset_options(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    captured: dict = {}
+
+    def fake_post(wid, body, base="", tok=""):
+        captured.update(body)
+        return {"model": body["model"], "candidates": ["x"]}
+
+    monkeypatch.setattr(backend_client, "prompt_candidates", fake_post)
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    node.generate("wf-1", "m", "draft", "任务", "", "")
+
+    assert "temperature" not in captured
+    assert "top_p" not in captured
+    assert "num_ctx" not in captured
+
+
+def test_candidate_node_reports_backend_error(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    monkeypatch.setattr(
+        backend_client,
+        "prompt_candidates",
+        lambda wid, body, base="", tok="": {"error": "队列有待执行任务", "status": 409},
+    )
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    text, raw = node.generate("wf-1", "m", "draft", "任务", "", "")
+    assert "队列有待执行任务" in text
+    assert "409" in raw

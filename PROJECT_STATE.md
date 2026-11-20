@@ -3863,5 +3863,58 @@
 - 浏览器只读会话长期方案：本轮由扩展 Python 代理持 node token 转发绕开跨源读不到令牌/cookie 的限制；面板内规则/草稿等明细仍只读，编辑跳转完整工作台。
 - 候选节点进画布前需画布桥把 workflow_id/checkpoint 规则/working_prompts/受保护术语带到节点侧，当前被画布桥阶段阻塞；脱离上下文裸做会退化成通用 Ollama 对话，查重判定不重复造。
 
+### 159. 画布桥前置切片：工作流上下文节点 + 候选生成节点（2026-11-20）
+
+#### 159.1 落地口径
+
+- 158.6 记的阻塞项本轮收窄：候选节点不再整体后置。上下文由后端按 `workflow_id`
+  取齐（规则继承、现有提示词、受保护术语），节点只需把 `workflow_id` 作为输入
+  传入；剩余真正后置的是「画布自动感知当前工作流」，即不用手填 id、由画布桥
+  把上下文自动带到节点侧。
+- 边界不变：候选只回画布、不写回草稿/规则/设置；管理类操作仍回工作台网页。
+
+#### 159.2 后端窄放行
+
+- `main.py`：节点令牌非安全方法放行从精确集合升级为「精确白名单 + 后缀派生
+  匹配」。`NODE_WRITE_ALLOWED_PATHS` 保留 release-vram；新增
+  `NODE_POST_ALLOWED_SUFFIXES = ("/prompt/candidates",)`，覆盖动态工作流 id 段。
+  草稿/确认/写回/任务等写库端点仍 403。
+- 候选端点语义为只读派生：后端 `prompt_candidates` 解析规则上下文、现有提示词、
+  受保护术语后调本地 Ollama，候选不落库。
+
+#### 159.3 扩展节点
+
+- `backend_client.py`：新增 `workflow_rule_prompt(workflow_id)` GET
+  `/api/workflows/{id}/rules/prompt`；`prompt_candidates(workflow_id, body)`
+  POST `/api/workflows/{id}/prompt/candidates`。`_get/_post` 捕获
+  `urllib.error.HTTPError`，把后端 detail/status 透传到节点（此前统一吞成
+  网络异常）。
+- `context_node.py` → `WorkbenchWorkflowContext`（分类 Workbench/Context）：
+  输入 workflow_id/backend_url/token，输出规则上下文文本 + 原始 JSON；渲染
+  已解析字段、冲突、未覆盖字段与口径说明。
+- `candidate_node.py` → `WorkbenchPromptCandidate`（分类 Workbench/LLM）：
+  输入 workflow_id/model/mode（draft/polish/trim/bilingual/negative）/task/
+  可选 temperature/top_p/num_ctx；未设置的采样选项不下发；输出候选文本 +
+  原始 JSON；后端错误（如队列活动 409、模型空返回）透传提示，不崩画布。
+
+#### 159.4 测试与真机验收
+
+- 后端新增：node token 对 candidates 放行（mock 队列 idle + llm chat，200 且
+  候选返回）、对 drafts 写库仍 403。扩展测试新增：两节点注册/形状/中文名、
+  缺 id/缺模型降级、已解析与冲突渲染、候选渲染、采样选项透传与省略、后端错误
+  透传。
+- 后端全量 **404 passed**；前端 `npm run build` 37 模块绿。
+- 真机（ComfyUI v0.30.2，PID 11376）：`/object_info` 四个工作台节点全部注册；
+  面板 JS 200；启动日志 Traceback/RuntimeError/ImportError/ModuleNotFound/
+  ERROR/Exception 命中 0。验收后停止进程，8188/17890 释放，无残留 python。
+- 未在真机实跑候选生成：会占用本地 Ollama 显存（8GB 约束）；鉴权与后端链路
+  已由单测覆盖，节点加载由 object_info 验收。
+
+#### 159.5 仍后置
+
+- 画布桥自动感知：节点自动拿到当前画布工作流的 id/规则/提示词/受保护术语，
+  无需手填 id；节点与画布节点的双向读写同属该阶段。
+- 面板内规则/草稿明细编辑仍回工作台网页；侧边栏保持只读概览。
+
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -73,6 +74,17 @@ def _token(override: str = "") -> str:
     return _read_node_token_file()
 
 
+def _decode_error(exc: urllib.error.HTTPError) -> dict[str, Any]:
+    """Turn an HTTP error into a readable payload, keeping the backend detail."""
+    raw = exc.read().decode("utf-8") if exc.fp else ""
+    try:
+        payload = json.loads(raw) if raw else {"error": exc.reason}
+    except json.JSONDecodeError:
+        payload = {"error": exc.reason}
+    detail = payload.get("detail") or payload.get("error") or exc.reason
+    return {"error": str(detail), "status": exc.code, "detail": payload}
+
+
 def _get(
     path: str,
     base_url: str = "",
@@ -94,6 +106,8 @@ def _get(
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             body = resp.read().decode("utf-8")
         return json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        return _decode_error(exc)
     except Exception as exc:  # network/parse failure must not crash the canvas
         return {"error": f"{type(exc).__name__}: {exc}"}
 
@@ -120,6 +134,8 @@ def _post(
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        return _decode_error(exc)
     except Exception as exc:  # network/parse failure must not crash the canvas
         return {"error": f"{type(exc).__name__}: {exc}"}
 
@@ -146,4 +162,36 @@ def list_rules(
         base_url,
         token,
         params={"level": level, "scope_key": scope_key},
+    )
+
+
+def workflow_rule_prompt(
+    workflow_id: str,
+    base_url: str = "",
+    token: str = "",
+) -> dict[str, Any]:
+    """Read the LLM-ready resolved rule context for one workflow.
+
+    The projection carries only resolved fields, conflicts, unknowns and a
+    short instruction; prompt bodies and notes are not included.
+    """
+    return _get(f"/api/workflows/{workflow_id}/rules/prompt", base_url, token)
+
+
+def prompt_candidates(
+    workflow_id: str,
+    body: dict[str, Any],
+    base_url: str = "",
+    token: str = "",
+) -> dict[str, Any]:
+    """Ask the backend to produce a local-LLM prompt candidate for a workflow.
+
+    The backend resolves the rule context, existing prompts and protected terms
+    server-side; the suggestion is returned but never written back to a draft.
+    """
+    return _post(
+        f"/api/workflows/{workflow_id}/prompt/candidates",
+        base_url,
+        token,
+        body,
     )

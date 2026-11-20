@@ -109,6 +109,12 @@ _node_token_loaded = False
 # or settings. Anything else stays read-only for node callers.
 NODE_WRITE_ALLOWED_PATHS = {"/api/system/release-vram"}
 
+# Node-token POST endpoints matched by path suffix. These are read-only-derived
+# calls: they ask the local LLM to produce a suggestion but never write it back
+# to a draft, rule, or setting. They are listed by suffix because the workflow
+# id segment is dynamic.
+NODE_POST_ALLOWED_SUFFIXES = ("/prompt/candidates",)
+
 CSRF_HEADER = "X-Workbench-CSRF"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
@@ -454,6 +460,17 @@ def _authorized(request: Request) -> tuple[bool, str]:
     return False, ""
 
 
+def _node_post_allowed(path: str) -> bool:
+    """Whether a node token may call this non-safe method.
+
+    Exact release actions are whitelisted outright; derived read-only POST
+    endpoints (e.g. local LLM candidate generation) match by suffix.
+    """
+    if path in NODE_WRITE_ALLOWED_PATHS:
+        return True
+    return any(path.endswith(suffix) for suffix in NODE_POST_ALLOWED_SUFFIXES)
+
+
 @app.middleware("http")
 async def require_session(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -491,7 +508,7 @@ async def require_session(request: Request, call_next):
     # actions. Reject any other state-changing request even when the token
     # itself is valid.
     if session_kind == "node" and request.method not in SAFE_METHODS:
-        if request.url.path not in NODE_WRITE_ALLOWED_PATHS:
+        if not _node_post_allowed(request.url.path):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Node token is read-only"},
