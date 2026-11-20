@@ -4484,6 +4484,46 @@
   时不含；定向脚本测试除记录在案的环境型 stopper 用例外全过。
 - 全量后端 **432 passed, 2 failed**，两个失败仍为既有环境型，与本轮无关。
 
+## 172. 候选下拉绑定兼容新版前端钩子（2026-11-20）
+
+### 172.1 背景与问题
+
+- 170 节的 picker 只挂 `nodeCreated` 钩子；实测 comfyui-frontend-package 1.47.12
+  对该钩子分发不可靠，已落画布的候选节点可能绑不上选项。
+- 早期实现直接在 `setup` 同步读 `app.graph`，而 graph 在初始化前访问会主动抛
+  “ComfyApp graph accessed before initialization”，导致扩展 setup 报错中断。
+
+### 172.2 落地内容（`web/workbench_panel.js`）
+
+- `beforeRegisterNodeDef`：命中候选/上下文节点类型后包裹原型 `onAdded`，节点加入
+  画布 30ms 后补绑 picker，作为本构建上更可靠的绑定路径；`nodeCreated` 保留作旧版
+  前端兼容。
+- `setup(app)` 兜底：`requestAnimationFrame` 轮询 graph 就绪后遍历 `app.graph._nodes`
+  补绑既有节点，并挂 `nodeAdded` 事件持续绑定后续新增节点；graph 未就绪时不报错、
+  延后再试。
+- `safeGraph(app)`：try/catch 包裹每次 `app.graph` 访问，启动早期未初始化时降级为
+  “稍后再绑”，不中断扩展。
+- `applyComboOptions` 补 `else` 兜底：options 既非数组也非普通对象时直接赋值数组；
+  `graph.on` 事件 API 在个别构建缺失时 try 包住，不影响既有节点的兜底遍历。
+
+### 172.3 真机核验
+
+- 通过写入 DOM 属性的临时探针确认（主世界 window 全局在自动化浏览器的隔离求值世界
+  不可见，DOM 跨世界共享）：模块顶层执行、`nodeCreated`/`beforeRegisterNodeDef`/
+  `setup` 钩子均触发，既有候选节点绑定 1 次；三类 combo 选项均写入 widget：
+  - `prompt_profile` 14 项，首项 `auto（自动匹配）`，停用项标注；
+  - `workflow_id` 4 项，标签含文件名、id 前缀与“已确认”标记；
+  - `model` 3 项，附 `8.2B` 参数规模。
+- 代理 `/workbench-api/workflows`、`ollama-models`、`profiles` 均 200，控制台无
+  workbench 报错；核验后临时探针已全部移除。
+
+### 172.4 回归
+
+- `node --check` 面板 JS 语法通过。
+- 定向 `test_extension.py` + `test_scripts.py` **48 passed, 1 failed**，唯一失败为
+  记录在案的环境型 stopper 用例（仓库根残留 `.workbench-runtime.json`），非本轮回归。
+- 提交 `7e94bb4`，已推送 `origin/dev`。
+
 
 
 
