@@ -811,13 +811,30 @@ def fetch_ollama_models(url: str) -> dict[str, Any]:
         data = json.loads(raw)
         entries = data.get("models") if isinstance(data, dict) else None
         names: list[str] = []
+        details: dict[str, str] = {}
         if isinstance(entries, list):
             for item in entries:
                 if isinstance(item, dict) and isinstance(item.get("name"), str):
-                    names.append(item["name"])
-        return {"online": True, "models": names, "error": None}
+                    name = item["name"]
+                    names.append(name)
+                    item_details = item.get("details")
+                    if isinstance(item_details, dict):
+                        param_size = item_details.get("parameter_size")
+                        if isinstance(param_size, str) and param_size.strip():
+                            details[name] = param_size.strip()
+        return {
+            "online": True,
+            "models": names,
+            "model_details": details,
+            "error": None,
+        }
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        return {"online": False, "models": [], "error": str(exc)}
+        return {
+            "online": False,
+            "models": [],
+            "model_details": {},
+            "error": str(exc),
+        }
 
 
 def _as_nonneg_int(value: Any) -> int | None:

@@ -145,8 +145,10 @@ type RoleChoice = "" | "positive" | "negative";
 type OllamaModelsResponse = {
   online: boolean;
   models: string[];
+  model_details?: Record<string, string>;
   error: string | null;
 };
+type OllamaModelDetail = { name: string; params: string };
 type CandidateResponse = {
   model: string;
   mode: string;
@@ -587,6 +589,28 @@ function persistParam(key: string, value: string): void {
   }
 }
 
+function parseModelParamSize(params: string | undefined): number {
+  if (!params) return 0;
+  const match = params.toLowerCase().match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function defaultModel(
+  models: string[],
+  details: Record<string, string>,
+): string {
+  if (models.length === 0) return "";
+  const ranked = [...models].sort((a, b) => {
+    const sizeDiff =
+      parseModelParamSize(details[b]) - parseModelParamSize(details[a]);
+    if (sizeDiff !== 0) return sizeDiff;
+    const aSmall = /3\s*b/i.test(a) ? 1 : 0;
+    const bSmall = /3\s*b/i.test(b) ? 1 : 0;
+    return aSmall - bSmall;
+  });
+  return ranked[0];
+}
+
 function parseOptionalFloat(
   text: string,
   min: number,
@@ -630,8 +654,11 @@ export default function WorkflowWorkbench({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("请选择一个 ComfyUI 工作流 JSON 文件。");
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [modelDetails, setModelDetails] = useState<Record<string, string>>({});
   const [modelsOnline, setModelsOnline] = useState(true);
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedModel, setSelectedModel] = useState(() =>
+    readStoredParam("workbench.selectedModel"),
+  );
   const [taskText, setTaskText] = useState(() =>
     readStoredParam("workbench.candidateTask"),
   );
@@ -955,10 +982,16 @@ export default function WorkflowWorkbench({
   async function loadModels() {
     try {
       const result = await apiGet<OllamaModelsResponse>("/api/ollama/models");
+      const details = result.model_details ?? {};
       setOllamaModels(result.models);
+      setModelDetails(details);
       setModelsOnline(result.online);
-      if (result.models.length > 0 && !selectedModel) {
-        setSelectedModel(result.models[0]);
+      if (result.models.length > 0) {
+        const remembered = readStoredParam("workbench.selectedModel");
+        const pick = result.models.includes(remembered)
+          ? remembered
+          : defaultModel(result.models, details);
+        setSelectedModel(pick);
       }
     } catch (error) {
       setModelsOnline(false);
@@ -2308,13 +2341,23 @@ export default function WorkflowWorkbench({
                       <select
                         value={selectedModel}
                         disabled={busy || candidateBusy}
-                        onChange={(event) => setSelectedModel(event.target.value)}
+                        onChange={(event) => {
+                          setSelectedModel(event.target.value);
+                          persistParam(
+                            "workbench.selectedModel",
+                            event.target.value,
+                          );
+                        }}
                       >
-                        {ollamaModels.map((model) => (
-                          <option key={model} value={model}>
-                            {model}
-                          </option>
-                        ))}
+                        {ollamaModels.map((model) => {
+                          const params = modelDetails[model];
+                          const label = params ? `${model}（${params}）` : model;
+                          return (
+                            <option key={model} value={model}>
+                              {label}
+                            </option>
+                          );
+                        })}
                       </select>
                       <select
                         value={candidateMode}

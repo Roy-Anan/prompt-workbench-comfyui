@@ -2,6 +2,7 @@ import sqlite3
 
 import llm_client
 import rule_store
+import workflow_api
 
 
 def _seed_context_rules(database_path):
@@ -410,3 +411,15 @@ def test_workflow_rules_unregistered_without_checkpoint(client):
     assert body["status"] == "unregistered"
     assert body["reason"] == "no_checkpoint_recognized"
     assert body["checkpoint"] is None
+
+
+def test_dedupe_prompt_tags_preserves_first_occurrence():
+    text = "1girl, no lens flare, No Lens Flare, 1girl, soft light"
+    assert workflow_api._dedupe_prompt_tags(text) == (
+        "1girl, no lens flare, soft light"
+    )
+
+
+def test_dedupe_prompt_tags_keeps_lines_separate():
+    text = "a, b, a\nc, b, c"
+    assert workflow_api._dedupe_prompt_tags(text) == "a, b\nc, b"

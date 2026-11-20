@@ -544,6 +544,38 @@ def test_fetch_ollama_models_is_conservative_on_unreachable_host(client):
     assert result["online"] is False
     assert result["models"] == []
     assert result["error"] is not None
+    assert result["model_details"] == {}
+
+
+def test_fetch_ollama_models_reads_parameter_size(client, monkeypatch):
+    _, main = client
+    payload = json.dumps(
+        {
+            "models": [
+                {"name": "comfyui-prompt:v1", "details": {"parameter_size": "8.2B"}},
+                {"name": "qwen2.5:3b", "details": {"parameter_size": "3.1B"}},
+            ]
+        }
+    ).encode("utf-8")
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return payload
+
+    monkeypatch.setattr(main, "urlopen", lambda request, timeout=2.5: _Response())
+    result = main.fetch_ollama_models("http://127.0.0.1:11434")
+    assert result["online"] is True
+    assert result["models"] == ["comfyui-prompt:v1", "qwen2.5:3b"]
+    assert result["model_details"] == {
+        "comfyui-prompt:v1": "8.2B",
+        "qwen2.5:3b": "3.1B",
+    }
 
 
 def test_comfyui_status_passes_through(client, monkeypatch):

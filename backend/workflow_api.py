@@ -277,6 +277,30 @@ def _clean_candidate_content(content: str) -> str:
     return text
 
 
+def _dedupe_prompt_tags(text: str) -> str:
+    """Deduplicate comma-separated tags within each line, keeping the first
+    occurrence and its original wording. Comparison is case-insensitive;
+    prose and line breaks are otherwise left untouched. This guards against a
+    local model drifting into repeating the same tag (e.g. ``no lens flare``)
+    dozens of times.
+    """
+    cleaned_lines: list[str] = []
+    for line in text.splitlines():
+        seen: set[str] = set()
+        kept: list[str] = []
+        for part in line.split(","):
+            tag = part.strip()
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            kept.append(tag)
+        cleaned_lines.append(", ".join(kept))
+    return "\n".join(cleaned_lines)
+
+
 def _unregistered_context() -> dict[str, Any]:
     return {
         "status": "unregistered",
@@ -639,6 +663,7 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
         )
 
     cleaned = _clean_candidate_content(result["content"])
+    cleaned = _dedupe_prompt_tags(cleaned)
     if not cleaned:
         raise HTTPException(
             status_code=502,

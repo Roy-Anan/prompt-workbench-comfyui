@@ -4123,6 +4123,40 @@
   stopper 用例需先清仓库根 `.workbench.pid` / `.workbench-runtime.json`
   残留再跑（无记录兜底仍可停当前实例）。
 
+## 165. 模型来源核查与候选质量/误用处置
+
+### 165.1 模型来源结论
+
+- 本机三模型：`qwen2.5:3b`（3.1B Q4_K_M，测试期临时拉取）、
+  `comfyui-prompt:v1`（8.2B Q4_K_M）、`qwen3:latest`（8.2B Q4_K_M，与 v1
+  共用同一底模 blob）。
+- `comfyui-prompt:v1` 是在 8.2B 底模上固化整套 SYSTEM（助手角色、内置模型索引、
+  派系规则、输出分段、去重停止规则）与 PARAMETER（top_k 20 / top_p 0.8 /
+  num_ctx 8192 / temperature 0.7）的定制版 8B Q4。
+- `bench-acceptance-mark` 是早期 TASK-003.1-R5 验收时人为追加的测试标记，混进
+  工作流现有正向后被后续候选继承，非模型自创。
+
+### 165.2 落地处置
+
+- 后端 `workflow_api.py`：新增 `_dedupe_prompt_tags`，候选清洗后按行内逗号拆分、
+  大小写不敏感保序去重（保留首次写法），缓解本地模型后半段重复堆叠退化；补 2 个
+  回归用例（保序去重、多行互不串段）。
+- 后端 `main.py`：`/api/ollama/models` 在保留 `models: string[]` 的前提下新增
+  `model_details: {name: parameter_size}`（取自 Ollama `/api/tags` 的
+  `details.parameter_size`）；离线兜底返回空映射；补解析用例。
+- 前端 `WorkflowWorkbench.tsx`：模型选择写入 localStorage 记忆；下拉选项标注参数
+  规模；未记忆时按规模优先（并列再排除名字含 3b），避免误选 3B 测试模型。
+- 数据清洗：经 write 端点把验收工作流现有正向里的 `bench-acceptance-mark` 移除，
+  并对该 working 正向做一次保序去重（166 → 85 标签），负向原样保留。
+
+### 165.3 未做与遗留
+
+- 3B 模型文件属本地磁盘数据，不主动删除；如需释放空间可手动
+  `ollama rm qwen2.5:3b`。
+- 后端回归 412 passed（唯一失败为已知环境型 sidebar LoRA 探测）；前端
+  `tsc -b && vite build` 37 模块构建绿；重启实例 health 正常，模型清单规模字段
+  实测返回 3.1B / 8.2B / 8.2B。
+
 
 
 
