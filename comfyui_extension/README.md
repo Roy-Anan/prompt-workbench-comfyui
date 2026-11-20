@@ -119,7 +119,9 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    同源侧注册白名单只读路由 `/workbench-api/*`，由 Python 侧持节点令牌
    转发后端（绕过浏览器跨源无法读取令牌/cookie 的限制）；后端新增
    `GET /api/sidebar/summary` 六域脱敏聚合投影；面板改为代理优先、直连
-   回退，分区折叠展示规则/草稿/素材/LoRA/历史摘要，超出条数引导回工作台。
+   回退，分区折叠展示工作流（id/标题/确认态）/规则/草稿/素材/LoRA/历史摘要，
+   超出条数引导回工作台。节点侧 `backend_client.list_workflows()` 复用
+   `GET /api/workflows` 提供只读清单，为后续下拉选择预留契约。
 4. **工作流上下文节点 + 候选生成节点**（已落地前置切片）：
    `WorkbenchWorkflowContext` 按输入的 `workflow_id` 拉取后端已解析的规则
    上下文（已解析字段/冲突/未覆盖/口径说明）；`WorkbenchPromptCandidate`

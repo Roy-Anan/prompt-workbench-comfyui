@@ -54,6 +54,22 @@ def _write_token_file(path: Path, token: str) -> None:
     path.write_text(json.dumps({"token": token}), encoding="utf-8")
 
 
+def test_client_list_workflows_reads_endpoint(monkeypatch):
+    import backend_client
+
+    captured: dict = {}
+
+    def fake_get(path, base_url="", token="", params=None, auth=True):
+        captured["path"] = path
+        return {"items": [{"id": "wf-1", "filename": "a.json", "confirmed": True}]}
+
+    monkeypatch.setattr(backend_client, "_get", fake_get)
+    data = backend_client.list_workflows()
+
+    assert captured["path"] == "/api/workflows"
+    assert data["items"][0]["id"] == "wf-1"
+
+
 def test_client_reads_persisted_node_token(monkeypatch, tmp_path):
     import backend_client
 

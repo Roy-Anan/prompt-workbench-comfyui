@@ -105,13 +105,14 @@ function detailLine(main, sub) {
   row.appendChild(el("div", { text: clip(main), style: "font-size:12px;" }));
   if (sub) {
     row.appendChild(
-      el("div", { text: clip(sub, 32), style: "font-size:11px;opacity:0.65;" }),
+      el("div", { text: clip(sub, 60), style: "font-size:11px;opacity:0.65;" }),
     );
   }
   return row;
 }
 
 const SECTION_META = [
+  ["workflows", "工作流"],
   ["rules", "规则"],
   ["drafts", "草稿"],
   ["assets", "素材"],
@@ -143,7 +144,10 @@ function renderSection(box, key, label, section) {
   for (const item of items.slice(0, 5)) {
     let main = "";
     let sub = "";
-    if (key === "rules") {
+    if (key === "workflows") {
+      main = item.title || "";
+      sub = `${item.id || ""}${item.confirmed ? " · 已确认" : ""}`;
+    } else if (key === "rules") {
       main = `${item.rule_key || ""}`;
       sub = `${item.level || ""}${item.scope_key ? " · " + item.scope_key : ""}${item.value ? " · " + item.value : ""}`;
     } else if (key === "drafts") {

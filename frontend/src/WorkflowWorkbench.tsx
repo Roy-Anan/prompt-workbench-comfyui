@@ -730,6 +730,18 @@ export default function WorkflowWorkbench({
     window.addEventListener("workbench:open-drafts", openDrafts);
     return () => window.removeEventListener("workbench:open-drafts", openDrafts);
   }, []);
+
+  useEffect(() => {
+    if (!draftPanelOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !draftBusy && !busy) {
+        setDraftPanelOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [draftPanelOpen, draftBusy, busy]);
+
   function initialRoles(report: Analysis) {
     const next: Record<string, RoleChoice> = {};
     for (const node of report.prompt_nodes) {

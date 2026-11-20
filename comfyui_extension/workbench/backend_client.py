@@ -165,6 +165,19 @@ def list_rules(
     )
 
 
+def list_workflows(
+    base_url: str = "",
+    token: str = "",
+) -> dict[str, Any]:
+    """Read imported workbench workflows (id / filename / confirmed).
+
+    This is a read-only GET; the node token is allowed through for safe methods.
+    The list lets a node surface which backend workflow a context/candidate call
+    should target without copying an id by hand.
+    """
+    return _get("/api/workflows", base_url, token)
+
+
 def workflow_rule_prompt(
     workflow_id: str,
     base_url: str = "",

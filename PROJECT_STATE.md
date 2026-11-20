@@ -3916,5 +3916,43 @@
   无需手填 id；节点与画布节点的双向读写同属该阶段。
 - 面板内规则/草稿明细编辑仍回工作台网页；侧边栏保持只读概览。
 
+## 160. 工作流清单只读接入面板 + 弹窗 Esc 关闭（2026-11-20）
+
+### 160.1 落地内容
+
+- **扩展 client 工作流清单只读方法**：`backend_client.list_workflows()` 复用既有
+  `GET /api/workflows`（node token 对 SAFE 方法本就放行），返回 id/filename/confirmed；
+  为后续节点下拉选择工作流预留只读契约，本轮节点 widget 仍为手填 STRING。补契约单测：
+  断言路径为 `/api/workflows` 且回传条目字段。
+- **侧边栏面板补工作流分区**：`SECTION_META` 增加 `workflows` 分区（置于首位），
+  渲染标题、`workflow_id` 与「已确认」标记；副行截断上限由 32 放宽到 60，避免
+  较长 id 被裁断。面板经既有代理 `/workbench-api/sidebar-summary` 取数，摘要投影
+  的 workflows 域本就带 id/title/confirmed，未新增后端端点。
+- **弹窗 Esc 快捷关闭**：
+  - `AssetLibrary` 复制导入 / 路径引用弹窗、素材详情编辑弹窗：补 window `keydown`
+    Escape 监听，busy 进行中不关闭，口径与点遮罩一致；
+  - `WorkflowWorkbench` 草稿箱弹窗：补 Esc 关闭，`draftBusy`/`busy` 中不关闭；
+  - `HistoryPanel` 灯箱与对比层 Esc 此前已统一覆盖，本轮不动。
+
+### 160.2 回归
+
+- 后端全量 **405 passed**（原 404 + 清单契约 1）；扩展模块 `_load()` 经单测加载无
+  ImportError。
+- 前端 `tsc -b && vite build` 通过：37 模块，CSS 47.21 kB / gzip 8.51 kB，
+  JS 255.40 kB / gzip 80.16 kB。
+
+### 160.3 边界与仍后置
+
+- **节点动态下拉 / 画布自动感知**：纯 Python 节点在实例化期无法异步拉后端列表填
+  combo；动态下拉需扩展前端 JS 改写 widget 选项，画布自动带入当前工作流仍缺
+  graph↔workflow 绑定链路，同属画布桥阶段，需真机前端环境验证，本轮不写。
+- **候选节点真机 Ollama 实跑**未做（8GB 显存约束）；鉴权与后端链路由单测覆盖，
+  节点加载由 object_info 验收。
+- **`.invalid` 表单错误态**：样式钩子已备，但前端尚无「校验失败」状态模型，本轮
+  不强行接入类名，留收口统一做表单校验态。
+- 深色主题令牌逐处精调、独立 Toast 组件化、1280×720 / 1366×768 / 1440×900 三档
+  分辨率真机复核，仍列入后续打磨。
+
+
 
 

@@ -220,6 +220,17 @@ export default function AssetLibrary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTags]);
 
+  useEffect(() => {
+    if (!importMode && !editing) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (importMode && !importBusy) setImportMode(null);
+      if (editing && !editBusy) setEditing(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [importMode, editing, importBusy, editBusy]);
+
   function toggleTag(name: string) {
     setActiveTags((prev) =>
       prev.includes(name) ? prev.filter((entry) => entry !== name) : [...prev, name],
