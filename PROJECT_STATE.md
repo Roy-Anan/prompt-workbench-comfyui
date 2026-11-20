@@ -4127,14 +4127,18 @@
 
 ### 165.1 模型来源结论
 
-- 本机三模型：`qwen2.5:3b`（3.1B Q4_K_M，测试期临时拉取）、
-  `comfyui-prompt:v1`（8.2B Q4_K_M）、`qwen3:latest`（8.2B Q4_K_M，与 v1
-  共用同一底模 blob）。
+- 底模血缘（165.4 磁盘核实）：用户唯一下载的原始权重是本地 GGUF
+  `Qwen3-VL-8B-Instruct-heretic-Q4_K_M.gguf`（4.68GB，family `qwen3vl`，
+  8.2B Q4_K_M）；经 `ollama create`（modelfile `FROM` 该 GGUF）导入为
+  `qwen3:latest`。`comfyui-prompt:v1` 不另存权重，复用同一底模 blob
+  `6c99e33f…`，仅额外挂 system 层（人设/规则文本）与 params 层（生成参数）。
 - `comfyui-prompt:v1` 是在 8.2B 底模上固化整套 SYSTEM（助手角色、内置模型索引、
   派系规则、输出分段、去重停止规则）与 PARAMETER（top_k 20 / top_p 0.8 /
   num_ctx 8192 / temperature 0.7）的定制版 8B Q4。
 - `bench-acceptance-mark` 是早期 TASK-003.1-R5 验收时人为追加的测试标记，混进
   工作流现有正向后被后续候选继承，非模型自创。
+- 该底模为 VL（视觉-语言）模型，带视觉编码器；工作台候选仅走纯文本 `/api/chat`，
+  未传图片，视觉能力当前未被调用。
 
 ### 165.2 落地处置
 
@@ -4151,11 +4155,23 @@
 
 ### 165.3 未做与遗留
 
-- 3B 模型文件属本地磁盘数据，不主动删除；如需释放空间可手动
-  `ollama rm qwen2.5:3b`。
 - 后端回归 412 passed（唯一失败为已知环境型 sidebar LoRA 探测）；前端
   `tsc -b && vite build` 37 模块构建绿；重启实例 health 正常，模型清单规模字段
   实测返回 3.1B / 8.2B / 8.2B。
+
+### 165.4 磁盘血缘核实与冗余清理
+
+- Ollama 实际模型目录为 `D:\AI\MODELS`（进程环境 `OLLAMA_MODELS`，未写入用户/
+  机器注册表）；C 盘默认 `~\.ollama\models\blobs` 为空，无第二套残留。
+- 清单层引用核实：`qwen3:latest` 层 = 底模 `6c99e33f…`（4.68GB）+ config
+  `03e615…`；`comfyui-prompt:v1` 层 = 同一底模 `6c99e33f…` + system `bf6b3a…`
+  （10.6KB）+ params `c8cd2…`（58B）+ 同一 config。两个模型不占第二份权重。
+- 硬链接核实：blob `6c99e…` 与原 GGUF 各自硬链接列表仅自身，为独立副本而非
+  硬链接；删除原 GGUF 不影响 Ollama 已导入模型。
+- 清理：测试期临时拉取的 `qwen2.5:3b` 已经 `/api/delete` 移除；冗余原 GGUF
+  （4.68GB）及空 `QWen3` 目录已删除，底模 blob 复核完好，两模型仍在线可识别。
+- 磁盘占用：现仅一份底模 blob（4.68GB）+ 两个小层；后续若重新导入或给其他工具
+  加载，需另行获取 GGUF 源文件。
 
 
 
