@@ -241,6 +241,21 @@ def test_save_manual_keeps_tags_and_samples(tmp_path):
     assert loaded["samples"] == [{"asset_id": 7, "caption": "训练任务 A"}]
 
 
+def test_save_manual_persists_hidden_flag(tmp_path):
+    manual_dir = str(tmp_path / "knowledge" / "lora")
+    lora_metadata.save_manual(
+        manual_dir, "side.safetensors", {"hidden": True}
+    )
+    loaded = lora_metadata.load_manual(manual_dir, "side.safetensors")
+    assert loaded["hidden"] is True
+    assert lora_metadata.merge_lora_meta({}, loaded)["hidden"] is True
+
+    lora_metadata.save_manual(manual_dir, "role.safetensors", {})
+    assert (
+        lora_metadata.load_manual(manual_dir, "role.safetensors")["hidden"] is False
+    )
+
+
 def _safetensors_with_metadata(metadata: dict) -> bytes:
     header = json.dumps({"__metadata__": metadata})
     encoded = header.encode("utf-8")

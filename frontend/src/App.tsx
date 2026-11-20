@@ -171,6 +171,7 @@ type LoraMeta = {
   combos?: LoraCombo[];
   tags?: string[];
   samples?: LoraSample[];
+  hidden?: boolean;
 };
 
 type CatalogEntry = {
@@ -488,6 +489,7 @@ export default function App() {
   const [loraTagsText, setLoraTagsText] = useState("");
   const [loraKeyword, setLoraKeyword] = useState("");
   const [loraActiveTag, setLoraActiveTag] = useState<string | null>(null);
+  const [loraShowHidden, setLoraShowHidden] = useState(false);
   const [loraSamples, setLoraSamples] = useState<LoraSample[]>([]);
   const [assetOptions, setAssetOptions] = useState<
     { id: number; name: string }[]
@@ -807,9 +809,14 @@ export default function App() {
     ),
   ).sort((a, b) => a.localeCompare(b, "zh"));
 
+  const hiddenLoraCount = (catalog?.loras ?? []).filter(
+    (entry) => entry.meta?.hidden,
+  ).length;
+
   const loraKeywordNorm = loraKeyword.trim().toLowerCase();
   const visibleLoras = (catalog?.loras ?? []).filter((entry) => {
     const meta = entry.meta;
+    if (!loraShowHidden && meta?.hidden) return false;
     if (loraActiveTag && !(meta?.tags ?? []).includes(loraActiveTag)) {
       return false;
     }
@@ -865,6 +872,9 @@ export default function App() {
             <small className="lora-meta-source">
               {LORA_SOURCE_LABEL[source]}
             </small>
+          )}
+          {meta?.hidden && (
+            <small className="lora-meta-source">已隐藏</small>
           )}
         </span>
         <small>{identityLabel(entry)}</small>
@@ -1069,12 +1079,21 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <button
-            className="secondary"
-            onClick={() => startLoraEdit(entry)}
-          >
-            编辑资料
-          </button>
+          <>
+            <button
+              className="secondary"
+              onClick={() => startLoraEdit(entry)}
+            >
+              编辑资料
+            </button>
+            <button
+              className="secondary"
+              disabled={loraSaveBusy}
+              onClick={() => void toggleLoraHidden(entry)}
+            >
+              {meta?.hidden ? "恢复显示" : "从清单隐藏"}
+            </button>
+          </>
         )}
       </li>
     );
@@ -1151,6 +1170,7 @@ export default function App() {
           combos: entry.meta?.combos ?? [],
           tags,
           samples: loraSamples,
+          hidden: entry.meta?.hidden ?? false,
         },
       );
       setEditingLora(null);
@@ -1158,6 +1178,36 @@ export default function App() {
       await refresh();
     } catch (error) {
       setMessage(`保存手动资料失败：${String(error)}`);
+    } finally {
+      setLoraSaveBusy(false);
+    }
+  }
+
+  async function toggleLoraHidden(entry: CatalogEntry) {
+    const meta = entry.meta;
+    const next = !(meta?.hidden ?? false);
+    setLoraSaveBusy(true);
+    try {
+      await apiPost(
+        `/api/models/loras/${encodeURIComponent(entry.name)}/manual`,
+        {
+          trigger_words: meta?.trigger_words ?? [],
+          description: meta?.description ?? "",
+          base_model: meta?.base_model ?? "",
+          combos: meta?.combos ?? [],
+          tags: meta?.tags ?? [],
+          samples: meta?.samples ?? [],
+          hidden: next,
+        },
+      );
+      setMessage(
+        next
+          ? `已在清单中隐藏「${entry.name}」（文件与节点使用不受影响）。`
+          : `已恢复显示「${entry.name}」。`,
+      );
+      await refresh();
+    } catch (error) {
+      setMessage(`更新隐藏状态失败：${String(error)}`);
     } finally {
       setLoraSaveBusy(false);
     }
@@ -1706,6 +1756,17 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                  )}
+                  {hiddenLoraCount > 0 && (
+                    <button
+                      type="button"
+                      className={`lora-tag-chip${
+                        loraShowHidden ? " active" : ""
+                      }`}
+                      onClick={() => setLoraShowHidden((v) => !v)}
+                    >
+                      显示已隐藏（{hiddenLoraCount}）
+                    </button>
                   )}
                 </div>
                 <ul className="catalog-list lora-list">

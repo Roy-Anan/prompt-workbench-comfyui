@@ -276,6 +276,7 @@ def load_manual(manual_dir: str, name: str) -> dict[str, Any]:
         "combos": [],
         "tags": [],
         "samples": [],
+        "hidden": False,
     }
     if not manual_dir or not str(manual_dir).strip():
         return record
@@ -300,6 +301,7 @@ def load_manual(manual_dir: str, name: str) -> dict[str, Any]:
     record["base_model"] = _as_text(data.get("base_model"))
     record["tags"] = _clean_manual_tags(data.get("tags"))
     record["samples"] = _clean_samples(data.get("samples"))
+    record["hidden"] = bool(data.get("hidden", False))
     combos: list[dict[str, Any]] = []
     raw_combos = data.get("combos")
     if isinstance(raw_combos, list):
@@ -451,6 +453,7 @@ def save_manual(
         "combos": combos,
         "tags": tags,
         "samples": samples,
+        "hidden": bool(payload.get("hidden") or False),
     }
 
     base = Path(str(manual_dir).strip()).expanduser()
@@ -508,6 +511,7 @@ def merge_lora_meta(sidecar: dict[str, Any], manual: dict[str, Any]) -> dict[str
         "combos": combos,
         "tags": list(manual.get("tags") or []),
         "samples": _clean_samples(manual.get("samples")),
+        "hidden": bool(manual.get("hidden", False)),
     }
 
     filled = bool(triggers) + bool(description) + bool(base_model)

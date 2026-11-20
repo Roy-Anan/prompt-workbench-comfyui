@@ -351,6 +351,7 @@ class LoraManualUpdate(BaseModel):
     combos: list[dict[str, Any]] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     samples: list[dict[str, Any]] = Field(default_factory=list)
+    hidden: bool = False
 
 
 class IdentityHashRequest(BaseModel):
@@ -1358,11 +1359,16 @@ def models_catalog():
 
     # R127: read-only identity grouping. Two LoRAs are flagged related when
     # they share a file stem (case-insensitive) or at least one trigger word.
-    # This is a hint for manual review, not an automatic merge.
-    related, related_triggers = _group_related_loras(
-        catalog.get("loras", []), lora_meta
-    )
-    compatible = _group_compatible_loras(catalog.get("loras", []), lora_meta)
+    # This is a hint for manual review, not an automatic merge. Hidden manual
+    # notes are kept out of grouping so bundled/non-role weights do not pull
+    # role LoRAs into related/compatible hints.
+    visible_loras = [
+        entry
+        for entry in catalog.get("loras", [])
+        if not (lora_meta.get(entry["name"]) or {}).get("hidden")
+    ]
+    related, related_triggers = _group_related_loras(visible_loras, lora_meta)
+    compatible = _group_compatible_loras(visible_loras, lora_meta)
     for entry in catalog.get("loras", []):
         entry["related"] = related.get(entry["name"], [])
         entry["related_triggers"] = related_triggers.get(entry["name"], [])

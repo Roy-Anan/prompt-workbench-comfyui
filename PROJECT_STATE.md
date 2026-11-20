@@ -4339,6 +4339,59 @@
 - 素材存在性靠前端选择 + 图片加载兜底，后端保存时不查素材库 DB；素材被删后卡片图加载失败留空。
 - 真机验收（草稿缩略图回链、标签筛选、效果图选择器与素材图展示）待在运行实例点开核验。
 
+## 168. LoRA 清单隐藏机制：配套件默认隐藏、可开关恢复（2026-11-20）
+
+### 168.1 背景与口径
+
+`models/loras/` 下混入了 IPAdapter FaceID PlusV2 的配套 LoRA
+`ip-adapter-faceid-plusv2_sd15_lora.safetensors`：它是与 `models/ipadapter/` 同名 `.bin`
+适配器成对使用的官方转换件，规范位置就在 loras 目录，由 FaceID 统一加载节点按文件名正则自动配对；
+**不是角色 LoRA、无触发词**，但出现在工作台 LoRA 清单里会干扰角色 LoRA 管理。
+
+口径（可逆稳妥方案）：隐藏标记落在手动笔记 record 的 `hidden: bool` 字段；工作台清单默认隐藏，
+界面保留「显示已隐藏」开关与卡片「恢复显示」入口；**文件实体与 ComfyUI 节点使用完全不受影响**，
+不删除文件、不改 ComfyUI 目录、不做永久排除白名单。
+
+### 168.2 落地内容
+
+1. **后端 `lora_metadata.py`**
+   - `load_manual`：record 初始化 `hidden=False`，读取 `bool(data.get("hidden", False))`。
+   - `save_manual`：record 写入 `hidden: bool(payload.get("hidden") or False)`。
+   - `merge_lora_meta`：merged 带出 `hidden: bool(manual.get("hidden", False))`。
+
+2. **后端 `main.py`**
+   - `LoraManualUpdate` 模型加 `hidden: bool = False`。
+   - catalog 段构造 `visible_loras`（过滤 hidden）传给 `_group_related_loras` /
+     `_group_compatible_loras`；hidden 条目 related/compatible 留空，不被推荐给其他 LoRA。
+
+3. **前端 `App.tsx`**
+   - `LoraMeta` 类型加 `hidden?: boolean`；新增 `loraShowHidden` state（默认 false）。
+   - `visibleLoras` 默认过滤 hidden；`hiddenLoraCount` 统计隐藏条目数。
+   - 筛选区出现「显示已隐藏（N）」chip 开关；卡片标题带「已隐藏」标记。
+   - 卡片按钮：非编辑态提供「从清单隐藏 / 恢复显示」按钮（`toggleLoraHidden` 复用现有
+     manual 回写，保留 tags/samples/combos 等字段，只翻转 hidden）。
+   - `saveLoraManual` 编辑保存时 body 透传当前 `hidden`，避免普通编辑把隐藏标记重置。
+
+4. **本机数据**
+   - `userdata/knowledge/lora/ip-adapter-faceid-plusv2_sd15_lora.json` 置 `hidden: true`；
+     重启/刷新实例后该配套件默认不出现在清单，可经开关恢复。
+
+### 168.3 回归
+
+- 新增 `test_save_manual_persists_hidden_flag`：保存 True 回读、merge 带出、缺省 False。
+- 定向 `test_lora_metadata.py` **14 passed**；全量后端 **428 passed, 2 failed**，两个失败
+  仍是记录在案的环境型：stopper 用例受仓库根残留 `.workbench-runtime.json` 触发 corrupt 分支；
+  sidebar 汇总读到本机真实 LoRA/草稿计数非零。本轮改动不含 `scripts/` 目录。
+- 前端 `tsc -b && vite build` 绿。
+
+### 168.4 边界与 backlog
+
+- 隐藏仅作用于工作台清单与推荐分组；ComfyUI 画布节点、IPAdapter 加载逻辑照常按文件名配对，
+  工作台不感知也不干预。
+- 隐藏标记存手动笔记 JSON；无笔记的 LoRA 无法被隐藏（与 tags/samples 同一套存储边界）。
+- 已知遗留：`suyuexifull` 权重头里的单数 `trigger_word` 字段后端未提取（TRIGGER_KEYS 仅复数形式）。
+- 真机验收（隐藏后清单/分组、开关恢复、按钮回写）待在重启后的运行实例点开核验。
+
 
 
 
