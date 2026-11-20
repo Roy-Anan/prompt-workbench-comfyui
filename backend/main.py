@@ -349,6 +349,8 @@ class LoraManualUpdate(BaseModel):
     description: str = ""
     base_model: str = ""
     combos: list[dict[str, Any]] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    samples: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class IdentityHashRequest(BaseModel):

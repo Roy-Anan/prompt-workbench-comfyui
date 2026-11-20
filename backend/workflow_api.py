@@ -1,10 +1,11 @@
 from __future__ import annotations
 import re
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field, field_validator
 import comfy_client
 import comfy_tasks
@@ -168,6 +169,10 @@ class PromptCandidateRequest(BaseModel):
 class TagRename(BaseModel):
     old_tag: str = Field(min_length=1, max_length=30)
     new_tag: str = Field(min_length=1, max_length=30)
+
+
+class TaskSubmitPayload(BaseModel):
+    draft_id: str | None = None
 
 
 class DraftSave(BaseModel):
@@ -418,13 +423,91 @@ def restore_version(workflow_id: str, stamp: str):
         _raise_api_error(exc)
 
 
+def _normalize_prompt_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.lower().split())
+
+
+def _attach_draft_images(
+    connection: sqlite3.Connection,
+    workflow_id: str,
+    drafts: list[dict[str, Any]],
+    output_dir: str,
+) -> None:
+    """Attach output images to each draft, mutating the draft records in place.
+
+    Records submitted against a draft link directly by ``draft_id``. Older
+    history rows without a draft link fall back to a normalized positive-prompt
+    match; negative prompts are not used for the fallback because they are often
+    generic or empty.
+    """
+    history = generation_history.list_history(connection, workflow_id=workflow_id)
+    by_draft: dict[str, list[dict[str, Any]]] = {}
+    text_fallback: list[dict[str, Any]] = []
+    for record in history:
+        images = generation_history.annotate_exists(
+            record.get("images") or [], output_dir
+        )
+        if not images:
+            continue
+        slim = [
+            {
+                "filename": img.get("filename"),
+                "subfolder": img.get("subfolder") or "",
+                "exists": img.get("exists"),
+                "prompt_id": record.get("prompt_id"),
+            }
+            for img in images
+        ]
+        draft_ref = str(record.get("draft_id") or "").strip()
+        if draft_ref:
+            by_draft.setdefault(draft_ref, []).extend(slim)
+        else:
+            text_fallback.append(
+                {
+                    "positive": _normalize_prompt_text(
+                        record.get("positive_prompt")
+                    ),
+                    "images": slim,
+                }
+            )
+
+    for draft in drafts:
+        linked = list(by_draft.get(draft["id"], []))
+        if not linked:
+            draft_pos = _normalize_prompt_text(draft.get("positive"))
+            if draft_pos:
+                for entry in text_fallback:
+                    hist_pos = entry["positive"]
+                    if hist_pos and (
+                        hist_pos == draft_pos
+                        or draft_pos in hist_pos
+                        or hist_pos in draft_pos
+                    ):
+                        linked.extend(entry["images"])
+        draft["images"] = linked
+
+
 @router.get("/{workflow_id}/drafts")
 def list_drafts(workflow_id: str, include_trashed: bool = False):
-    """List the named drafts saved for this workflow, newest update first."""
+    """List the named drafts saved for this workflow, newest update first.
+
+    Each draft carries its linked output images (direct draft-id link, with a
+    prompt-text fallback for pre-existing history rows).
+    """
     try:
-        return {"items": store().list_drafts(workflow_id, include_trashed)}
+        drafts = store().list_drafts(workflow_id, include_trashed)
     except (WorkflowError, FileNotFoundError, OSError) as exc:
         _raise_api_error(exc)
+
+    root = datadir.default_data_root()
+    settings = datadir.load_settings_file(root) or {}
+    output_dir = (settings.get("storage") or {}).get("output", "")
+    with model_identity.connect(_database_path()) as connection:
+        generation_history.ensure_schema(connection)
+        _attach_draft_images(connection, workflow_id, drafts, output_dir)
+    return {"items": drafts}
 
 
 @router.post("/{workflow_id}/drafts")
@@ -725,7 +808,9 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
 
 
 def _submit_guarded(
-    workflow_id: str, snapshot: dict[str, Any] | None = None
+    workflow_id: str,
+    snapshot: dict[str, Any] | None = None,
+    draft_id: str | None = None,
 ) -> dict[str, Any]:
     """Shared fail-closed submission gate used by first submit and manual retry.
 
@@ -862,6 +947,7 @@ def _submit_guarded(
             prompts,
             workflow.get("report", {}),
             "submitted",
+            draft_id,
         )
     return record
 
@@ -877,9 +963,17 @@ def release_vram():
 
 
 @router.post("/{workflow_id}/tasks")
-def submit_task(workflow_id: str):
-    """Submit the working API-format workflow to local ComfyUI, guarded."""
-    return _submit_guarded(workflow_id)
+def submit_task(
+    workflow_id: str,
+    payload: TaskSubmitPayload | None = Body(default=None),
+):
+    """Submit the working API-format workflow to local ComfyUI, guarded.
+
+    An optional ``draft_id`` records the draft the submission was based on so
+    its output images can be shown back in the draft box.
+    """
+    draft_id = payload.draft_id if payload else None
+    return _submit_guarded(workflow_id, draft_id=draft_id)
 
 
 @router.post("/{workflow_id}/tasks/{prompt_id}/retry")
@@ -908,8 +1002,12 @@ def retry_task(workflow_id: str, prompt_id: str):
                 status_code=409,
                 detail=f"任务状态为 {status}，仅失败或已中断的任务可手动重试。",
             )
+        history_record = generation_history.get_by_prompt_id(connection, prompt_id)
+        inherited_draft = (
+            history_record.get("draft_id") if history_record else None
+        )
 
-    return _submit_guarded(workflow_id)
+    return _submit_guarded(workflow_id, draft_id=inherited_draft)
 
 
 @router.get("/{workflow_id}/tasks")

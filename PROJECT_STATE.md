@@ -4288,6 +4288,57 @@
   当前经 API 与本地目录操作。
 - 后续可补：Profile 跨工作流复制、收藏分组置顶、回收站；LoRA 触发词元数据整理等。
 
+## 167. TASK-003.1-R126 草稿出图回链 / LoRA 标签搜索 / 效果图 / 权重头底座读取（2026-11-20）
+
+### 167.1 落地内容
+
+1. **草稿↔出图回链**
+   - 历史表新增 `draft_id TEXT`；`ensure_schema` 用 `PRAGMA table_info` 探测后 `ALTER TABLE ADD COLUMN`，
+     幂等兼容旧库；`record_snapshot(..., draft_id=None)` 增参落库，`_row` 解码带出。
+   - `POST /{workflow_id}/tasks` 接收可选 body `draft_id`；`_submit_guarded` 透传；retry 端点从
+     原历史记录继承 `draft_id`。
+   - `list_drafts` 返回前 `_attach_draft_images` 聚合：按 `draft_id` 直链分组图片；无链旧记录按
+     归一化正向 Prompt 互相包含兜底（负向不参与兜底）；每草稿附精简图片元数据
+     `{filename, subfolder, exists, prompt_id}`。
+   - 前端草稿卡片缩略图墙（最多 6 张、懒加载），点击跳历史；`currentDraftId` 在采纳/保存/更新
+     草稿时记录，提交任务时带上。
+
+2. **LoRA 标签与标签搜索**
+   - 手动笔记 record 新增 `tags: []`；清洗 strip/去重/截断，限 20 条、每条 30 字；`save_manual`
+     白名单校验写入，`load_manual`/`merge_lora_meta` 带出。
+   - 前端：标签输入（逗号/换行解析）；标签 chip 快捷筛选 + 关键词双过滤（匹配 name/base_model/
+     description/tags/trigger_words）；聚合全部标签去重排序。
+
+3. **LoRA 效果图（复用素材库）**
+   - 手动笔记 record 新增 `samples: [{asset_id, caption}]`；`asset_id` 正整数去重，caption 限 120 字，
+     最多 12 张；非法条目丢弃。
+   - 前端编辑表单：下拉选素材（`GET /api/assets/items`，过滤 exists）+ caption 输入；卡片效果图墙
+     走 `/api/assets/image?asset_id=`，figcaption 展示训练任务说明。不另建 LoRA 专用图片目录。
+
+4. **权重头只读扫描底座模型**
+   - `read_weight_header`：只读 8 字节小端头长 + 明文 JSON 头（不加载张量、不占显存、CPU 顺序读），
+     从 `__metadata__` 取 `ss_sd_model_name`/`ss_base_model`/`base_model`/`modelspec.architecture`；
+     OSError/ValueError/UnicodeDecodeError/struct.error/JSONDecodeError 容错返回空；`_safe_weight_path`
+     防绝对路径与 `..` 穿越。
+   - `scan_lora_metadata`：sidecar 无 `base_model` 时用权重头值补；读不到留空不硬猜。触发词基本
+     不写进权重头，仍以 sidecar JSON / 手动笔记为准，权重头扫描只补底座等训练参数。
+
+### 167.2 回归
+
+- 新增 `test_lora_metadata.py`：tags/samples 清洗回读、最小合法 safetensors 头解析（含损坏/非
+  safetensors 容错）、scan 头值兜底；`test_generation_history.py`：提交记录 `draft_id` 回读。
+- 定向 **27 passed**；全量后端 **427 passed, 2 failed**，两个失败均为环境型：stopper 用例受仓库根
+  残留 `.workbench-runtime.json` 触发 corrupt 分支；sidebar 汇总读到本机真实 LoRA/草稿计数非零。
+  本轮改动不含 `scripts/` 目录。
+- 前端 `tsc -b && vite build` 绿。
+
+### 167.3 边界与 backlog
+
+- 旧历史无 `draft_id` 时靠正向 Prompt 文本兜底匹配，Prompt 被大改后可能对不上；不做负向兜底。
+- 权重头底座覆盖率取决于训练器是否写入 `__metadata__`；触发词不从权重头提取。
+- 素材存在性靠前端选择 + 图片加载兜底，后端保存时不查素材库 DB；素材被删后卡片图加载失败留空。
+- 真机验收（草稿缩略图回链、标签筛选、效果图选择器与素材图展示）待在运行实例点开核验。
+
 
 
 

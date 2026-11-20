@@ -404,6 +404,34 @@ button:focus-visible { outline: 2px solid var(--w-brand); outline-offset: 2px; }
 .workflow-list-item small,
 .workflow-node-row small { color: var(--w-text-3); }
 
+/* 草稿卡片关联出图缩略图墙 */
+.draft-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.draft-thumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--w-border);
+  border-radius: var(--r-tag);
+  background: var(--w-bg-2);
+  overflow: hidden;
+  cursor: pointer;
+  flex: none;
+}
+.draft-thumb:hover:not(:disabled) {
+  border-color: var(--w-brand);
+}
+.draft-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* 节点行 / 候选卡 / 比对行 / 规则行 / 比对分组 */
 .workflow-node-row,
 .candidate-card,
@@ -516,6 +544,134 @@ button:focus-visible { outline: 2px solid var(--w-brand); outline-offset: 2px; }
   background: var(--w-bg-2);
   border: 1px solid var(--w-border);
   border-radius: var(--r-card);
+}
+
+/* LoRA 标签与筛选 */
+.lora-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.lora-filter-input {
+  height: 38px;
+  border: 1px solid var(--w-border);
+  border-radius: var(--r-ctl);
+  background: var(--w-panel);
+  color: var(--w-text);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  padding: 0 12px;
+}
+.lora-filter-input:focus {
+  border-color: var(--w-brand);
+  outline: none;
+}
+.lora-tag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lora-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.lora-tag-chip {
+  font-size: var(--fs-caption);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--w-border);
+  background: var(--w-bg-2);
+  color: var(--w-text-2);
+}
+button.lora-tag-chip {
+  cursor: pointer;
+}
+button.lora-tag-chip.active {
+  background: var(--w-brand);
+  border-color: var(--w-brand);
+  color: #fff;
+}
+
+/* LoRA 效果图（复用素材库） */
+.lora-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.lora-sample {
+  margin: 0;
+  width: 72px;
+}
+.lora-sample img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: var(--r-tag);
+  border: 1px solid var(--w-border);
+  display: block;
+}
+.lora-sample figcaption {
+  font-size: var(--fs-micro);
+  color: var(--w-text-3);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.lora-samples-edit {
+  border: 1px solid var(--w-border);
+  border-radius: var(--r-card);
+  padding: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.lora-samples-edit legend {
+  font-size: var(--fs-secondary);
+  color: var(--w-text-2);
+  padding: 0 4px;
+}
+.lora-sample-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lora-sample-picker select,
+.lora-sample-picker input,
+.lora-sample-edit-list input {
+  height: 36px;
+  border: 1px solid var(--w-border);
+  border-radius: var(--r-ctl);
+  background: var(--w-panel);
+  color: var(--w-text);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  padding: 0 10px;
+}
+.lora-sample-edit-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lora-sample-edit-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lora-sample-edit-list img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--r-tag);
+  border: 1px solid var(--w-border);
+  flex: none;
+}
+.lora-sample-edit-list input {
+  flex: 1;
 }
 
 /* 危险按钮 */
@@ -829,27 +985,41 @@ button:disabled { background: var(--w-bg-2); color: var(--w-text-3); border-colo
 }
 
 /* —— 提示词候选：聊天式输入框（大输入在上，参数行在下） —— */
+/* —— 提示词候选：标题分层，卡片与控件舒展 —— */
+.candidate-heading { margin-bottom: var(--sp-3); }
+.candidate-heading h3 {
+  font-size: var(--fs-h2);
+  margin: 0 0 4px;
+  letter-spacing: 0.01em;
+}
+.candidate-subtitle {
+  margin: 0;
+  color: var(--w-text-2);
+  font-size: var(--fs-secondary);
+  line-height: 1.6;
+}
+
 .candidate-box {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
+  gap: var(--sp-4);
+  padding: var(--sp-5);
   background: var(--w-bg-2);
   border: 1px solid var(--w-border);
-  border-radius: var(--r-card);
+  border-radius: var(--r-lg);
 }
 .candidate-input {
   width: 100%;
-  min-height: 84px;
+  min-height: 160px;
   resize: vertical;
   border: 1px solid var(--w-border);
-  border-radius: var(--r-ctl);
+  border-radius: var(--r-card);
   background: var(--w-panel);
   color: var(--w-text);
   font-family: var(--font);
   font-size: var(--fs-body);
-  line-height: 1.6;
-  padding: 10px 12px;
+  line-height: 1.7;
+  padding: 14px 16px;
 }
 .candidate-input::placeholder { color: var(--w-text-3); }
 .candidate-input:focus { border-color: var(--w-brand); outline: none; }
@@ -859,29 +1029,56 @@ button:disabled { background: var(--w-bg-2); color: var(--w-text-3); border-colo
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: var(--sp-3);
+}
+.candidate-primary,
+.candidate-params {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--sp-2);
 }
+
 .candidate-controls select,
 .candidate-controls input {
-  height: 36px;
+  height: 40px;
   border: 1px solid var(--w-border);
   border-radius: var(--r-ctl);
   background: var(--w-panel);
   color: var(--w-text);
   font-family: var(--font);
   font-size: var(--fs-secondary);
-  padding: 0 10px;
+  padding: 0 12px;
   min-width: 0;
 }
 .candidate-controls select:focus,
 .candidate-controls input:focus { border-color: var(--w-brand); outline: none; }
-.candidate-controls select { max-width: 220px; }
-.candidate-controls input { width: 132px; }
-.candidate-controls button { margin-left: auto; }
+.candidate-controls select { min-width: 168px; max-width: 240px; }
+.candidate-controls input { width: 124px; }
+
+.candidate-submit {
+  margin-left: auto;
+  height: 40px;
+  padding: 0 24px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  border-radius: var(--r-ctl);
+  background: var(--w-brand);
+  border-color: var(--w-brand);
+  color: #fff;
+  cursor: pointer;
+}
+.candidate-submit:hover:not(:disabled) {
+  background: var(--w-brand-hover);
+  border-color: var(--w-brand-hover);
+}
+.candidate-submit:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (max-width: 760px) {
-  .candidate-controls { flex-direction: column; align-items: stretch; }
+  .candidate-controls { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .candidate-primary,
+  .candidate-params { flex-direction: column; align-items: stretch; }
   .candidate-controls select,
   .candidate-controls input { width: 100%; max-width: none; }
-  .candidate-controls button { margin-left: 0; }
+  .candidate-submit { margin-left: 0; width: 100%; }
 }

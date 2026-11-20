@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS generation_history (
     model_snapshot TEXT,
     task_status TEXT,
     images TEXT,
-    last_error TEXT
+    last_error TEXT,
+    draft_id TEXT
 );
 """
 
@@ -36,6 +37,13 @@ def _now() -> str:
 
 def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(_SCHEMA)
+    # Tolerate pre-existing databases that predate the draft_id column.
+    columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(generation_history)")
+    }
+    if "draft_id" not in columns:
+        connection.execute("ALTER TABLE generation_history ADD COLUMN draft_id TEXT")
     connection.commit()
 
 
@@ -62,6 +70,7 @@ def _row(row: sqlite3.Row | tuple[Any, ...] | None) -> dict[str, Any] | None:
         "task_status",
         "images",
         "last_error",
+        "draft_id",
     ]
     record = dict(zip(keys, row))
     record["model_snapshot"] = _decode(record.get("model_snapshot"))
@@ -298,16 +307,19 @@ def record_snapshot(
     working_prompts: list[dict[str, Any]],
     report: dict[str, Any],
     status: str,
+    draft_id: str | None = None,
 ) -> dict[str, Any]:
     prompts = extract_prompts(working_prompts)
     snapshot = extract_model_snapshot(report)
     now = _now()
+    clean_draft = str(draft_id).strip() if draft_id else None
     connection.execute(
         """
         INSERT OR IGNORE INTO generation_history
             (prompt_id, workflow_id, created_at, positive_prompt,
-             negative_prompt, model_snapshot, task_status, images, last_error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             negative_prompt, model_snapshot, task_status, images, last_error,
+             draft_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             prompt_id,
@@ -319,6 +331,7 @@ def record_snapshot(
             status,
             None,
             None,
+            clean_draft,
         ),
     )
     connection.commit()

@@ -156,6 +156,8 @@ type LoraMetaStatus = "complete" | "partial" | "empty" | "missing" | "unreadable
 
 type LoraCombo = { name: string; trigger_words: string[] };
 
+type LoraSample = { asset_id: number; caption: string };
+
 type LoraMeta = {
   name: string;
   status: LoraMetaStatus;
@@ -167,6 +169,8 @@ type LoraMeta = {
   manual_present?: boolean;
   manual_unreadable?: boolean;
   combos?: LoraCombo[];
+  tags?: string[];
+  samples?: LoraSample[];
 };
 
 type CatalogEntry = {
@@ -481,6 +485,15 @@ export default function App() {
   const [loraTriggersText, setLoraTriggersText] = useState("");
   const [loraDescription, setLoraDescription] = useState("");
   const [loraBaseModel, setLoraBaseModel] = useState("");
+  const [loraTagsText, setLoraTagsText] = useState("");
+  const [loraKeyword, setLoraKeyword] = useState("");
+  const [loraActiveTag, setLoraActiveTag] = useState<string | null>(null);
+  const [loraSamples, setLoraSamples] = useState<LoraSample[]>([]);
+  const [assetOptions, setAssetOptions] = useState<
+    { id: number; name: string }[]
+  >([]);
+  const [samplePickerAsset, setSamplePickerAsset] = useState("");
+  const [sampleCaption, setSampleCaption] = useState("");
   const [loraSaveBusy, setLoraSaveBusy] = useState(false);
   const [hashingIdentity, setHashingIdentity] = useState<string | null>(null);
   const [openRuleHistory, setOpenRuleHistory] = useState<string | null>(null);
@@ -788,6 +801,33 @@ export default function App() {
     }
   }
 
+  const allLoraTags = Array.from(
+    new Set(
+      (catalog?.loras ?? []).flatMap((entry) => entry.meta?.tags ?? []),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "zh"));
+
+  const loraKeywordNorm = loraKeyword.trim().toLowerCase();
+  const visibleLoras = (catalog?.loras ?? []).filter((entry) => {
+    const meta = entry.meta;
+    if (loraActiveTag && !(meta?.tags ?? []).includes(loraActiveTag)) {
+      return false;
+    }
+    if (loraKeywordNorm) {
+      const haystack = [
+        entry.name,
+        meta?.base_model ?? "",
+        meta?.description ?? "",
+        ...(meta?.tags ?? []),
+        ...(meta?.trigger_words ?? []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(loraKeywordNorm)) return false;
+    }
+    return true;
+  });
+
   const renderLoraEntry = (entry: CatalogEntry) => {
     const meta = entry.meta ?? null;
     const detail = [
@@ -850,6 +890,31 @@ export default function App() {
             </button>
           </div>
         )}
+        {meta && (meta.tags ?? []).length > 0 && (
+          <div className="lora-tags">
+            {(meta.tags ?? []).map((tag) => (
+              <span key={tag} className="lora-tag-chip">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        {meta && (meta.samples ?? []).length > 0 && (
+          <div className="lora-samples">
+            {(meta.samples ?? []).map((sample) => (
+              <figure key={sample.asset_id} className="lora-sample">
+                <img
+                  src={`/api/assets/image?asset_id=${sample.asset_id}`}
+                  alt="效果图"
+                  loading="lazy"
+                />
+                {sample.caption && (
+                  <figcaption>{sample.caption}</figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        )}
         {combos.length > 0 && (
           <ul className="lora-combos">
             {combos.map((combo, index) => (
@@ -897,6 +962,14 @@ export default function App() {
               />
             </label>
             <label>
+              标签（逗号分隔，便于筛选）
+              <input
+                value={loraTagsText}
+                onChange={(event) => setLoraTagsText(event.target.value)}
+                placeholder="例如：角色、风格、服装、场景"
+              />
+            </label>
+            <label>
               说明
               <textarea
                 rows={2}
@@ -906,6 +979,79 @@ export default function App() {
                 }
               />
             </label>
+            <fieldset className="lora-samples-edit">
+              <legend>效果图（来自素材库）</legend>
+              <div className="lora-sample-picker">
+                <select
+                  value={samplePickerAsset}
+                  onChange={(event) =>
+                    setSamplePickerAsset(event.target.value)
+                  }
+                >
+                  <option value="">选择素材…</option>
+                  {assetOptions.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={sampleCaption}
+                  placeholder="训练任务 / 说明"
+                  onChange={(event) =>
+                    setSampleCaption(event.target.value)
+                  }
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={addLoraSample}
+                  disabled={!samplePickerAsset}
+                >
+                  添加
+                </button>
+              </div>
+              {loraSamples.length > 0 && (
+                <ul className="lora-sample-edit-list">
+                  {loraSamples.map((sample) => {
+                    const asset = assetOptions.find(
+                      (item) => item.id === sample.asset_id,
+                    );
+                    return (
+                      <li key={sample.asset_id}>
+                        <img
+                          src={`/api/assets/image?asset_id=${sample.asset_id}`}
+                          alt={asset?.name ?? String(sample.asset_id)}
+                        />
+                        <input
+                          value={sample.caption}
+                          placeholder="训练任务 / 说明"
+                          onChange={(event) =>
+                            setLoraSamples((prev) =>
+                              prev.map((item) =>
+                                item.asset_id === sample.asset_id
+                                  ? {
+                                      ...item,
+                                      caption: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => removeLoraSample(sample.asset_id)}
+                        >
+                          移除
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </fieldset>
             <div className="actions">
               <button
                 onClick={() => void saveLoraManual(entry)}
@@ -934,12 +1080,51 @@ export default function App() {
     );
   };
 
+  async function ensureAssetOptions() {
+    if (assetOptions.length > 0) return;
+    try {
+      const body = await apiGet<{
+        items: { id: number; name: string; exists: boolean }[];
+      }>("/api/assets/items");
+      setAssetOptions(
+        (body.items || [])
+          .filter((item) => item.exists)
+          .map(({ id, name }) => ({ id, name })),
+      );
+    } catch {
+      setAssetOptions([]);
+    }
+  }
+
   function startLoraEdit(entry: CatalogEntry) {
     const meta = entry.meta ?? null;
     setEditingLora(entry.name);
     setLoraTriggersText((meta?.trigger_words ?? []).join("，"));
     setLoraDescription(meta?.description ?? "");
     setLoraBaseModel(meta?.base_model ?? "");
+    setLoraTagsText((meta?.tags ?? []).join(", "));
+    setLoraSamples(meta?.samples ?? []);
+    setSamplePickerAsset("");
+    setSampleCaption("");
+    void ensureAssetOptions();
+  }
+
+  function addLoraSample() {
+    const assetId = Number(samplePickerAsset);
+    if (!Number.isInteger(assetId) || assetId <= 0) return;
+    if (loraSamples.some((sample) => sample.asset_id === assetId)) return;
+    setLoraSamples((prev) => [
+      ...prev,
+      { asset_id: assetId, caption: sampleCaption.trim() },
+    ]);
+    setSamplePickerAsset("");
+    setSampleCaption("");
+  }
+
+  function removeLoraSample(assetId: number) {
+    setLoraSamples((prev) =>
+      prev.filter((sample) => sample.asset_id !== assetId),
+    );
   }
 
   function cancelLoraEdit() {
@@ -953,6 +1138,10 @@ export default function App() {
         .split(/[\n,，]/)
         .map((term) => term.trim())
         .filter(Boolean);
+      const tags = loraTagsText
+        .split(/[\n,，]/)
+        .map((term) => term.trim())
+        .filter(Boolean);
       await apiPost(
         `/api/models/loras/${encodeURIComponent(entry.name)}/manual`,
         {
@@ -960,6 +1149,8 @@ export default function App() {
           description: loraDescription.trim(),
           base_model: loraBaseModel.trim(),
           combos: entry.meta?.combos ?? [],
+          tags,
+          samples: loraSamples,
         },
       );
       setEditingLora(null);
@@ -1480,12 +1671,54 @@ export default function App() {
 
           {catalog ? (
             catalog.online ? (
-              <ul className="catalog-list lora-list">
-                {catalog.loras.map((entry) => renderLoraEntry(entry))}
-                {catalog.loras.length === 0 && (
-                  <li className="catalog-empty">ComfyUI 未列出 LoRA</li>
-                )}
-              </ul>
+              <>
+                <div className="lora-filter">
+                  <input
+                    type="text"
+                    className="lora-filter-input"
+                    placeholder="搜索名称、标签、触发词、底座或说明…"
+                    value={loraKeyword}
+                    onChange={(event) => setLoraKeyword(event.target.value)}
+                  />
+                  {allLoraTags.length > 0 && (
+                    <div className="lora-tag-filters">
+                      <button
+                        type="button"
+                        className={`lora-tag-chip${
+                          loraActiveTag === null ? " active" : ""
+                        }`}
+                        onClick={() => setLoraActiveTag(null)}
+                      >
+                        全部
+                      </button>
+                      {allLoraTags.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          className={`lora-tag-chip${
+                            loraActiveTag === tag ? " active" : ""
+                          }`}
+                          onClick={() =>
+                            setLoraActiveTag(loraActiveTag === tag ? null : tag)
+                          }
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <ul className="catalog-list lora-list">
+                  {visibleLoras.map((entry) => renderLoraEntry(entry))}
+                  {visibleLoras.length === 0 && (
+                    <li className="catalog-empty">
+                      {catalog.loras.length === 0
+                        ? "ComfyUI 未列出 LoRA"
+                        : "没有匹配筛选条件的 LoRA"}
+                    </li>
+                  )}
+                </ul>
+              </>
             ) : (
               <p className="catalog-offline">
                 LoRA 资料不可用：{catalog.error ?? "ComfyUI 未连接"}

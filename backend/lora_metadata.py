@@ -17,6 +17,7 @@ Supported status values:
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,79 @@ def _sidecar_path(base: Path, name: str) -> Path | None:
     except (ValueError, OSError):
         return None
     return resolved.with_suffix(".json")
+
+
+WEIGHT_BASE_KEYS = (
+    "ss_sd_model_name",
+    "ss_base_model",
+    "base_model",
+    "modelspec.architecture",
+)
+# Guard against an absurd header length before allocating the header slice.
+MAX_WEIGHT_HEADER_BYTES = 16 * 1024 * 1024
+
+
+def _safe_weight_path(base: Path, name: str) -> Path | None:
+    if not name or name in (".", ".."):
+        return None
+    candidate = Path(name)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    try:
+        base_resolved = base.resolve()
+        resolved = (base_resolved / name).resolve()
+        resolved.relative_to(base_resolved)
+    except (ValueError, OSError):
+        return None
+    return resolved
+
+
+def read_weight_header(lora_dir: str, name: str) -> dict[str, str]:
+    """Read-only parse of the safetensors header metadata.
+
+    Only the 8-byte header length and the small JSON header are read; tensor
+    bytes are never touched and nothing enters VRAM. Missing or unreadable
+    weights return an empty summary. Trigger words are generally not stored in
+    the weight header and are not extracted here.
+    """
+    result: dict[str, str] = {"base_model": ""}
+    if not lora_dir or not str(lora_dir).strip():
+        return result
+    base = Path(str(lora_dir).strip()).expanduser()
+    if not base.is_dir():
+        return result
+    path = _safe_weight_path(base, name)
+    if path is None or not path.is_file():
+        return result
+
+    try:
+        with path.open("rb") as handle:
+            length_bytes = handle.read(8)
+            if len(length_bytes) < 8:
+                return result
+            header_len = struct.unpack("<Q", length_bytes)[0]
+            if header_len <= 0 or header_len > MAX_WEIGHT_HEADER_BYTES:
+                return result
+            header_bytes = handle.read(header_len)
+        data = json.loads(header_bytes.decode("utf-8"))
+    except (
+        OSError,
+        ValueError,
+        UnicodeDecodeError,
+        struct.error,
+        json.JSONDecodeError,
+    ):
+        return result
+
+    meta = data.get("__metadata__") if isinstance(data, dict) else None
+    if not isinstance(meta, dict):
+        return result
+    for key in WEIGHT_BASE_KEYS:
+        value = _as_text(meta.get(key))
+        if value:
+            result["base_model"] = value[:MAX_MANUAL_BASE_CHARS]
+            break
+    return result
 
 
 def describe_lora(lora_dir: str, name: str) -> dict[str, Any]:
@@ -200,6 +274,8 @@ def load_manual(manual_dir: str, name: str) -> dict[str, Any]:
         "description": "",
         "base_model": "",
         "combos": [],
+        "tags": [],
+        "samples": [],
     }
     if not manual_dir or not str(manual_dir).strip():
         return record
@@ -222,6 +298,8 @@ def load_manual(manual_dir: str, name: str) -> dict[str, Any]:
     record["trigger_words"] = _as_text_list(data.get("trigger_words"))
     record["description"] = _as_text(data.get("description"))
     record["base_model"] = _as_text(data.get("base_model"))
+    record["tags"] = _clean_manual_tags(data.get("tags"))
+    record["samples"] = _clean_samples(data.get("samples"))
     combos: list[dict[str, Any]] = []
     raw_combos = data.get("combos")
     if isinstance(raw_combos, list):
@@ -238,6 +316,58 @@ MAX_MANUAL_TERM_CHARS = 60
 MAX_MANUAL_DESC_CHARS = 2000
 MAX_MANUAL_BASE_CHARS = 120
 MAX_MANUAL_COMBOS = 20
+MAX_MANUAL_TAGS = 20
+MAX_MANUAL_TAG_CHARS = 30
+MAX_MANUAL_SAMPLES = 12
+MAX_MANUAL_SAMPLE_CAPTION = 120
+
+
+def _clean_manual_tags(value: Any) -> list[str]:
+    """Strip, de-duplicate and cap manual LoRA tags; non-strings are skipped."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        tag = item.strip()
+        if not tag or tag in seen:
+            continue
+        tag = tag[:MAX_MANUAL_TAG_CHARS]
+        seen.add(tag)
+        out.append(tag)
+        if len(out) >= MAX_MANUAL_TAGS:
+            break
+    return out
+
+
+def _clean_samples(value: Any) -> list[dict[str, Any]]:
+    """Validate sample image references to the local asset library.
+
+    Only a positive integer ``asset_id`` and a capped caption are kept; the
+    referenced asset bytes stay owned by the asset library and are never
+    copied or resolved here.
+    """
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        try:
+            asset_id = int(item.get("asset_id"))
+        except (TypeError, ValueError):
+            continue
+        if asset_id <= 0 or asset_id in seen:
+            continue
+        caption = _as_text(item.get("caption"))[:MAX_MANUAL_SAMPLE_CAPTION]
+        seen.add(asset_id)
+        out.append({"asset_id": asset_id, "caption": caption})
+        if len(out) >= MAX_MANUAL_SAMPLES:
+            break
+    return out
 
 
 def _manual_write_path(manual_dir: Path, name: str) -> Path | None:
@@ -300,6 +430,8 @@ def save_manual(
 
     description = _as_text(payload.get("description"))[:MAX_MANUAL_DESC_CHARS]
     base_model = _as_text(payload.get("base_model"))[:MAX_MANUAL_BASE_CHARS]
+    tags = _clean_manual_tags(payload.get("tags"))
+    samples = _clean_samples(payload.get("samples"))
 
     raw_combos = payload.get("combos", [])
     if not isinstance(raw_combos, list):
@@ -317,6 +449,8 @@ def save_manual(
         "description": description,
         "base_model": base_model,
         "combos": combos,
+        "tags": tags,
+        "samples": samples,
     }
 
     base = Path(str(manual_dir).strip()).expanduser()
@@ -372,6 +506,8 @@ def merge_lora_meta(sidecar: dict[str, Any], manual: dict[str, Any]) -> dict[str
         "manual_present": has_manual,
         "manual_unreadable": bool(manual.get("unreadable")),
         "combos": combos,
+        "tags": list(manual.get("tags") or []),
+        "samples": _clean_samples(manual.get("samples")),
     }
 
     filled = bool(triggers) + bool(description) + bool(base_model)
@@ -400,6 +536,12 @@ def scan_lora_metadata(
     for name in names:
         if isinstance(name, str) and name:
             sidecar = describe_lora(lora_dir, name)
+            # The safetensors header is a last-resort source for the base model
+            # when the sidecar did not record one; weights are never loaded.
+            if not sidecar.get("base_model"):
+                sidecar["base_model"] = read_weight_header(lora_dir, name)[
+                    "base_model"
+                ]
             if manual_dir:
                 manual = load_manual(manual_dir, name)
                 result[name] = merge_lora_meta(sidecar, manual)

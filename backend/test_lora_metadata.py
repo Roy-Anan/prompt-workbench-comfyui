@@ -1,4 +1,5 @@
 import json
+import struct
 
 import lora_metadata
 
@@ -215,6 +216,59 @@ def test_save_manual_normalizes_and_reads_back(tmp_path):
     loaded = lora_metadata.load_manual(manual_dir, "hero.safetensors")
     assert loaded["present"] is True
     assert loaded["trigger_words"] == ["hero name", "dress"]
+
+
+def test_save_manual_keeps_tags_and_samples(tmp_path):
+    manual_dir = str(tmp_path / "knowledge" / "lora")
+    record = lora_metadata.save_manual(
+        manual_dir,
+        "hero.safetensors",
+        {
+            "tags": [" 角色 ", "角色", "服装", 123],
+            "samples": [
+                {"asset_id": 7, "caption": "训练任务 A"},
+                {"asset_id": 7, "caption": "重复引用"},
+                {"asset_id": -1, "caption": "非法 id"},
+                {"caption": "缺少 asset_id"},
+            ],
+        },
+    )
+    assert record["tags"] == ["角色", "服装"]
+    assert record["samples"] == [{"asset_id": 7, "caption": "训练任务 A"}]
+
+    loaded = lora_metadata.load_manual(manual_dir, "hero.safetensors")
+    assert loaded["tags"] == ["角色", "服装"]
+    assert loaded["samples"] == [{"asset_id": 7, "caption": "训练任务 A"}]
+
+
+def _safetensors_with_metadata(metadata: dict) -> bytes:
+    header = json.dumps({"__metadata__": metadata})
+    encoded = header.encode("utf-8")
+    return struct.pack("<Q", len(encoded)) + encoded + b"\x00" * 4
+
+
+def test_read_weight_header_extracts_base_model(tmp_path):
+    (tmp_path / "hero.safetensors").write_bytes(
+        _safetensors_with_metadata({"ss_sd_model_name": "sdxl base"})
+    )
+    meta = lora_metadata.read_weight_header(str(tmp_path), "hero.safetensors")
+    assert meta["base_model"] == "sdxl base"
+
+    (tmp_path / "broken.safetensors").write_bytes(b"not a safetensors file")
+    assert (
+        lora_metadata.read_weight_header(str(tmp_path), "broken.safetensors")[
+            "base_model"
+        ]
+        == ""
+    )
+
+
+def test_scan_falls_back_to_weight_header_base_model(tmp_path):
+    (tmp_path / "w.safetensors").write_bytes(
+        _safetensors_with_metadata({"modelspec.architecture": "SD 1.5"})
+    )
+    report = lora_metadata.scan_lora_metadata(str(tmp_path), ["w.safetensors"])
+    assert report["w.safetensors"]["base_model"] == "SD 1.5"
 
 
 def test_save_manual_rejects_traversal_and_bad_payload(tmp_path):

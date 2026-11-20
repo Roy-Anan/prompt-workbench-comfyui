@@ -40,7 +40,7 @@ def _confirm(test_client, workflow_id):
     assert response.status_code == 200
 
 
-def _submit_one(test_client, monkeypatch, prompt_id="prompt-1"):
+def _submit_one(test_client, monkeypatch, prompt_id="prompt-1", draft_id=None):
     workflow_id = _import(test_client, _api_workflow())
     _confirm(test_client, workflow_id)
 
@@ -83,8 +83,9 @@ def _submit_one(test_client, monkeypatch, prompt_id="prompt-1"):
         }
 
     monkeypatch.setattr(workflow_api.comfy_client, "submit_prompt", fake_submit)
+    payload = {"draft_id": draft_id} if draft_id is not None else {}
     response = test_client.post(
-        f"/api/workflows/{workflow_id}/tasks", headers=AUTH
+        f"/api/workflows/{workflow_id}/tasks", headers=AUTH, json=payload
     )
     assert response.status_code == 200
     return workflow_id
@@ -105,6 +106,16 @@ def test_submit_records_frozen_snapshot(client, monkeypatch):
         {"node_id": "5", "file": "x.safetensors"}
     ]
     assert record["task_status"] == "submitted"
+
+
+def test_submit_records_linked_draft(client, monkeypatch):
+    test_client, _ = client
+    _submit_one(test_client, monkeypatch, draft_id="draft-abc")
+
+    record = test_client.get(
+        "/api/history/prompt-1", headers=AUTH
+    ).json()
+    assert record["draft_id"] == "draft-abc"
 
 
 def test_snapshot_survives_later_draft_edit(client, monkeypatch):

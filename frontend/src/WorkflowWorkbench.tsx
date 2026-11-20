@@ -239,6 +239,13 @@ type ReleaseVramResult = {
   comfyui_error: string | null;
 };
 
+type DraftImage = {
+  filename: string;
+  subfolder: string;
+  exists: boolean | null;
+  prompt_id: string | null;
+};
+
 type DraftEntry = {
   id: string;
   name: string;
@@ -251,9 +258,18 @@ type DraftEntry = {
   trashed?: boolean;
   source_history_id?: string | null;
   env_snapshot?: EnvSnapshot | null;
+  images?: DraftImage[];
   created_at: string | null;
   updated_at: string | null;
 };
+
+function draftImageUrl(image: DraftImage): string {
+  const params = new URLSearchParams({
+    filename: image.filename,
+    subfolder: image.subfolder || "",
+  });
+  return `/api/history/image?${params.toString()}`;
+}
 
 function draftGroup(draft: DraftEntry): "pinned" | "favored" | "plain" {
   if (draft.pinned) return "pinned";
@@ -743,6 +759,7 @@ export default function WorkflowWorkbench({
   const [draftTags, setDraftTags] = useState("");
   const [tagFilter, setTagFilter] = useState(readStoredTagFilter);
   const [draftBusy, setDraftBusy] = useState(false);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [updatingDraftId, setUpdatingDraftId] = useState<string | null>(null);
   const [copyingDraftId, setCopyingDraftId] = useState<string | null>(null);
@@ -1512,13 +1529,17 @@ export default function WorkflowWorkbench({
     }
     setDraftBusy(true);
     try {
-      await apiPost(`/api/workflows/${workflowId}/drafts`, {
-        name,
-        positive: positiveText,
-        negative: negativeText,
-        note: draftNote.trim(),
-        tags: parseDraftTags(draftTags),
-      });
+      const record = await apiPost<{ id: string }>(
+        `/api/workflows/${workflowId}/drafts`,
+        {
+          name,
+          positive: positiveText,
+          negative: negativeText,
+          note: draftNote.trim(),
+          tags: parseDraftTags(draftTags),
+        },
+      );
+      setCurrentDraftId(record.id);
       setDraftName("");
       setDraftNote("");
       setDraftTags("");
@@ -1564,6 +1585,7 @@ export default function WorkflowWorkbench({
     setDraftName(draft.name);
     setDraftNote(draft.note);
     setDraftTags((draft.tags || []).join(", "));
+    setCurrentDraftId(draft.id);
     setMessage(`草稿「${draft.name}」已载入编辑框（尚未写入工作副本）。`);
   }
 
@@ -1694,6 +1716,7 @@ export default function WorkflowWorkbench({
         tags: parseDraftTags(draftTags),
         source_history_id: draft.source_history_id ?? null,
       });
+      setCurrentDraftId(draft.id);
       setUpdatingDraftId(null);
       await loadDrafts(workflowId, showTrashed);
       setMessage("草稿已更新（未写入工作副本）。");
@@ -1807,7 +1830,9 @@ export default function WorkflowWorkbench({
     if (!workflowId) return;
     setTaskBusy(true);
     try {
-      await apiPost<ComfyTask>(`/api/workflows/${workflowId}/tasks`, {});
+      await apiPost<ComfyTask>(`/api/workflows/${workflowId}/tasks`, {
+        draft_id: currentDraftId,
+      });
       setMessage("任务已提交到本地 ComfyUI。");
       await loadTasks(true);
     } catch (error) {
@@ -2356,7 +2381,12 @@ export default function WorkflowWorkbench({
           </div>
           {detail && (
             <div className="panel">
-              <h3 id="step-05">提示词候选</h3>
+              <div className="candidate-heading">
+                <h3 id="step-05">提示词候选</h3>
+                <p className="candidate-subtitle">
+                  本地 LLM 起草或润色提示词，模型专用规则按 checkpoint 与架构自动匹配
+                </p>
+              </div>
               {!modelsOnline ? (
                 <p className="muted">本地 Ollama 不可用，无法生成候选。</p>
               ) : ollamaModels.length === 0 ? (
@@ -2366,7 +2396,7 @@ export default function WorkflowWorkbench({
                   <div className="candidate-box">
                     <textarea
                       className="candidate-input"
-                      rows={3}
+                      rows={5}
                       placeholder="输入提示词要求或描写（可选）"
                       value={taskText}
                       disabled={busy || candidateBusy}
@@ -2379,6 +2409,7 @@ export default function WorkflowWorkbench({
                       }}
                     />
                     <div className="candidate-controls">
+                      <div className="candidate-primary">
                       <select
                         value={selectedModel}
                         disabled={busy || candidateBusy}
@@ -2448,6 +2479,8 @@ export default function WorkflowWorkbench({
                           </option>
                         ))}
                       </select>
+                      </div>
+                      <div className="candidate-params">
                       <input
                         type="text"
                         placeholder="温度（0–2）"
@@ -2478,7 +2511,9 @@ export default function WorkflowWorkbench({
                           persistParam("workbench.candidateCtx", event.target.value);
                         }}
                       />
+                      </div>
                       <button
+                        className="candidate-submit"
                         disabled={busy || candidateBusy || !selectedModel}
                         onClick={() => void generateCandidate()}
                       >
@@ -2971,6 +3006,30 @@ export default function WorkflowWorkbench({
                           <small className="workflow-meta">
                             环境：{envSnapshotSummary(draft.env_snapshot)}
                           </small>
+                        )}
+                        {(draft.images || []).length > 0 && (
+                          <div className="draft-thumbs">
+                            {(draft.images || [])
+                              .filter((image) => image.exists !== false)
+                              .slice(0, 6)
+                              .map((image, index) => (
+                                <button
+                                  key={`${image.subfolder}/${image.filename}-${index}`}
+                                  className="draft-thumb"
+                                  title={image.filename}
+                                  onClick={() =>
+                                    image.prompt_id &&
+                                    goToHistory(image.prompt_id)
+                                  }
+                                >
+                                  <img
+                                    src={draftImageUrl(image)}
+                                    alt={image.filename}
+                                    loading="lazy"
+                                  />
+                                </button>
+                              ))}
+                          </div>
                         )}
                       </div>
                       <div className="actions">
