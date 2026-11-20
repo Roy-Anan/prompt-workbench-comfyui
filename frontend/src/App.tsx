@@ -10,10 +10,24 @@ import { formatStructured } from "./format";
 import AssetLibrary from "./AssetLibrary";
 import HistoryPanel from "./HistoryPanel";
 import WorkflowWorkbench from "./WorkflowWorkbench";
+import WritingAssistant from "./WritingAssistant";
 
-type PageKey = "settings" | "workflows" | "history" | "assets" | "loras";
+type PageKey =
+  | "settings"
+  | "workflows"
+  | "writing"
+  | "history"
+  | "assets"
+  | "loras";
 
-const PAGE_KEYS: PageKey[] = ["settings", "workflows", "history", "assets", "loras"];
+const PAGE_KEYS: PageKey[] = [
+  "settings",
+  "workflows",
+  "writing",
+  "history",
+  "assets",
+  "loras",
+];
 
 function readStoredPage(): PageKey {
   try {
@@ -1575,7 +1589,9 @@ export default function App() {
   const pageTitle =
     activePage === "workflows"
       ? "工作流工作区"
-      : activePage === "history"
+      : activePage === "writing"
+        ? "写作助手"
+        : activePage === "history"
         ? "生成历史"
         : activePage === "assets"
           ? "素材库"
@@ -1614,6 +1630,13 @@ export default function App() {
               <div className="w-step" onClick={() => goToStep("09")}><span className="num">09</span>生成历史</div>
             </div>
           )}
+          <div
+            className={`w-nav-item ${activePage === "writing" ? "active" : ""}`}
+            onClick={() => switchPage("writing")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m12 20 7-7 3 3-7 7-3-3ZM14.5 5.5l4 4L7 21l-4 1 1-4L14.5 5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
+            写作助手
+          </div>
           <div
             className={`w-nav-item ${activePage === "history" ? "active" : ""}`}
             onClick={() => switchPage("history")}
@@ -1703,6 +1726,8 @@ export default function App() {
           comfyuiUrl={settings?.connections.comfyui_url ?? ""}
           protectedTerms={settings?.prompt?.protected_terms ?? []}
         />
+      ) : activePage === "writing" ? (
+        <WritingAssistant />
       ) : activePage === "history" ? (
         <HistoryPanel />
       ) : activePage === "assets" ? (

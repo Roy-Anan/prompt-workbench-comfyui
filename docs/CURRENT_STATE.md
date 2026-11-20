@@ -24,8 +24,8 @@
 
 ## 3. 未验证 / 遗留项
 
-- **R140 真机验收尚未执行**：本地 LLM 候选全链路（提示词类/写作类/裸模型三种身份）、画布新节点下拉与三口连线、题材/文风注入效果尚未在真机跑通核对；本轮以单测、扩展测试与前端 tsc/build 回归兜底。
-- **工作台前端 standalone 入口未放开**：后端独立轮次候选路由（无 `workflow_id`）已备；前端候选生成仍要求选中工作流，无工作流裸跑入口待后续切片。
+- **R140 真机验收已通过**：本地 LLM 候选全链路（提示词类/写作类/裸模型三种身份）、画布新节点下拉与三口连线、题材/文风注入效果已在真机跑通核对；前端 tsc/build 与后端单测/扩展测试回归兜底。
+- **工作台前端 standalone 入口已放开（2026-11-20）**：新增独立「写作助手」页签，不绑定工作流即可选身份/题材/文风/规则套/模式直接生成，打后端独立轮次路由 `POST /api/workflows/prompt/candidates`（无 `workflow_id`）；候选仅在本页复制使用，不写入工作副本、草稿与历史。
 - **已知环境型测试失败（非回归，勿改测试逻辑）**：
   - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。
   - `test_sidebar_summary.py::test_empty_sections_report_zero_totals`：读到本机真实非零计数。
