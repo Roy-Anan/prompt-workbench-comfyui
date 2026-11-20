@@ -3953,6 +3953,44 @@
 - 深色主题令牌逐处精调、独立 Toast 组件化、1280×720 / 1366×768 / 1440×900 三档
   分辨率真机复核，仍列入后续打磨。
 
+## 161. 代理工作流只读路由 + 不依赖 LLM 的真机冒烟（2026-11-20）
+
+### 161.1 落地内容
+
+- **代理白名单补工作流清单路由**：`proxy.PROXY_ROUTES` 增加
+  `workflows -> /api/workflows`，与既有 health/overview/sidebar-summary 同为
+  只读 GET；浏览器经 8188 同源代理、Python 侧持 node token 转发。条目仅含
+  id/filename/format/imported_at/confirmed，不含 Prompt 正文，脱敏口径与摘要
+  workflows 域一致。补 `backend_path_for("workflows")` 映射断言。
+
+### 161.2 真机冒烟（未加载 LLM / 底模）
+
+- 起后端 17890 与整合包 ComfyUI 8188（`--extra-model-paths-config` 挂载扩展，
+  未复制进整合包）。
+- 四个工作台节点在 `object_info` 全部注册：`WorkbenchRuleQuery`、
+  `WorkbenchReleaseVram`、`WorkbenchWorkflowContext`、`WorkbenchPromptCandidate`。
+- 面板静态资源 `/extensions/workbench/workbench_panel.js` 返回 200（含工作流
+  分区）；代理 `/workbench-api/workflows` 转发后端，回传 4 条工作流。
+- 代理安全口径复测：非白名单后缀 `drafts` → 403；白名单路由 POST → 405。
+- 启动日志 Traceback / RuntimeError / ImportError / ModuleNotFound / ERROR /
+  Exception 命中 0。
+- 候选端点边界复测：node token 对已确认 API 工作流 POST `prompt/candidates`，
+  在 LLM 不可达时 fail-closed 返回 **502**（`online:false`，连接拒绝
+  WinError 10061），未臆造候选；鉴权放行、工作流读取、规则上下文解析、队列
+  检查均通过。冒烟后停止两服务，三端口（17890/8188/11434）释放，无残留进程。
+
+### 161.3 阻塞与仍后置
+
+- **候选真机生成本轮未跑成**：本机 Ollama `blobs` 为 0、无本地模型、无 ollama
+  进程；环境变量 `OLLAMA_HOST=10.212.135.209:11434` 指向的远端拒绝连接。
+  要真正生成候选，需先在本机 `ollama pull` 一个模型，或开启可达的远端 Ollama；
+  在此之前候选只能验到 502 降级边界。
+- **节点动态下拉 / 画布自动感知**：仍属画布桥阶段，需扩展前端 JS 改写 widget
+  选项并在真机浏览器目视交互；自动带入当前工作流还缺 graph↔workflow 绑定链路。
+- **`.invalid` 表单错误态**、深色令牌逐处精调、独立 Toast、三档分辨率真机复核，
+  维持 160.3 后置结论。
+
+
 
 
 

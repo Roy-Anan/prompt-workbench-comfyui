@@ -28,6 +28,7 @@ PROXY_ROUTES: dict[str, str] = {
     "health": "/api/health",
     "overview": "/api/overview",
     "sidebar-summary": "/api/sidebar/summary",
+    "workflows": "/api/workflows",
 }
 
 SAFE_METHODS = {"GET", "HEAD"}

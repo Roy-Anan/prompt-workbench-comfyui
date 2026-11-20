@@ -133,11 +133,11 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
 
 ### 代理边界与实测踩坑
 
-- 代理只转发 `health` / `overview` / `sidebar-summary` 三个只读后缀；
+- 代理只转发 `health` / `overview` / `sidebar-summary` / `workflows` 四个只读后缀；
   其他后缀返回 403；非安全方法（POST 等）返回 405；后端不可达时 502 JSON。
 - 本机 aiohttp 的 `RouteTableDef` 没有 `add_route` 方法，注册必须用
   `routes.get(path)` 装饰器/回调式；GET 路由已隐含允许 HEAD，不可再显式
   注册 HEAD，否则启动即 `RuntimeError: method HEAD is already registered`。
-- 2026-11-20 真机（ComfyUI v0.30.2，PID 1672）实测：三个白名单 200、
-  非白名单 403、POST 405；面板 JS 与两个工作台节点正常下发，启动日志
-  无 Traceback。
+- 2026-11-20 真机（ComfyUI v0.30.2）实测：白名单 200、
+  非白名单 403、POST 405；四个工作台节点在 object_info 注册、面板 JS 正常
+  下发、`workflows` 代理回传清单；启动日志无 Traceback。
