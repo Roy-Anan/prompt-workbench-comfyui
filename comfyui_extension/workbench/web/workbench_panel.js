@@ -40,6 +40,43 @@ async function probe(base) {
   return resp.json();
 }
 
+async function fetchOverview(base) {
+  const resp = await fetch(`${base}/api/overview`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+const COUNT_LABELS = [
+  ["rules", "规则"],
+  ["workflows", "工作流"],
+  ["drafts", "草稿"],
+  ["assets", "素材"],
+  ["history", "历史记录"],
+];
+
+function renderCounts(container, counts) {
+  container.innerHTML = "";
+  const grid = el("div", {
+    style: "display:grid;grid-template-columns:repeat(3,1fr);gap:8px;",
+  });
+  for (const [key, label] of COUNT_LABELS) {
+    const value = Number(counts && counts[key]);
+    const cell = el("div", {
+      style: "border:1px solid rgba(128,128,128,0.25);border-radius:8px;padding:8px;text-align:center;",
+    });
+    cell.append(
+      el("div", { text: Number.isFinite(value) ? String(value) : "—", style: "font-size:16px;font-weight:600;" }),
+      el("div", { text: label, style: "font-size:11px;opacity:0.7;margin-top:2px;" }),
+    );
+    grid.appendChild(cell);
+  }
+  container.appendChild(grid);
+}
+
 function renderPanel(container) {
   container.style.padding = "12px";
   container.style.display = "flex";
@@ -49,6 +86,8 @@ function renderPanel(container) {
   const title = el("h3", { text: "Prompt 工作台", style: "margin:0;font-size:15px;" });
   const status = el("div", { class: "wb-status", text: "正在连接后端…" });
   status.style.fontSize = "13px";
+
+  const countsBox = el("div", { style: "display:none;" });
 
   const urlRow = el("div", { style: "display:flex;gap:6px;align-items:center;" });
   const urlInput = el("input", {
@@ -76,15 +115,26 @@ function renderPanel(container) {
     style: "font-size:12px;opacity:0.7;line-height:1.5;",
   });
 
-  container.append(title, status, urlRow, actions, note);
+  container.append(title, status, countsBox, urlRow, actions, note);
 
   async function refresh() {
     status.textContent = "正在连接后端…";
     status.style.color = "";
+    countsBox.style.display = "none";
     try {
       const data = await probe(baseUrl());
       status.textContent = `已连接：${data.app || "工作台"} v${data.version || "?"}`;
       status.style.color = "#4caf50";
+      try {
+        const overview = await fetchOverview(baseUrl());
+        if (overview && overview.counts) {
+          renderCounts(countsBox, overview.counts);
+          countsBox.style.display = "";
+        }
+      } catch (overviewErr) {
+        // Counts are optional; keep the connection status even if overview fails.
+        console.warn("[workbench] overview unavailable:", overviewErr);
+      }
     } catch (err) {
       status.textContent = `后端不可达：${err.message || err}`;
       status.style.color = "#e57373";

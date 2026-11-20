@@ -95,3 +95,34 @@ def test_comfyui_loopback_origin_allowed_for_health_probe(client):
         resp.headers.get("access-control-allow-origin")
         == "http://127.0.0.1:8188"
     )
+
+
+def test_overview_is_public_read_only_counts(client):
+    test_client, main = client
+
+    resp = test_client.get("/api/overview")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["version"] == main.APP_VERSION
+    counts = body["counts"]
+    assert set(counts) == {
+        "rules",
+        "workflows",
+        "drafts",
+        "assets",
+        "history",
+    }
+    assert all(isinstance(value, int) and value >= 0 for value in counts.values())
+
+
+def test_overview_allows_comfyui_loopback_origin(client):
+    test_client, _ = client
+
+    resp = test_client.get(
+        "/api/overview", headers={"Origin": "http://localhost:8188"}
+    )
+    assert resp.status_code == 200
+    assert (
+        resp.headers.get("access-control-allow-origin") == "http://localhost:8188"
+    )

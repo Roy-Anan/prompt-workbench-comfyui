@@ -111,6 +111,12 @@ NODE_WRITE_ALLOWED_PATHS = {"/api/system/release-vram"}
 CSRF_HEADER = "X-Workbench-CSRF"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
+# Read-only loopback endpoints exposed without a session ticket. They carry
+# only non-sensitive identity/count metadata (no Prompt texts, model names,
+# notes or file paths), so the external ComfyUI sidebar can probe the local
+# workbench over loopback.
+PUBLIC_READONLY_PATHS = {"/api/health", "/api/overview"}
+
 
 def default_settings() -> dict[str, Any]:
     return datadir.default_settings(DATA_ROOT)
@@ -459,7 +465,7 @@ async def require_session(request: Request, call_next):
     # The health endpoint is an unauthenticated identity probe: the launcher
     # uses it to confirm the listener is actually this workbench before
     # issuing a session. It exposes only app id/version, no user data.
-    if request.url.path == "/api/health":
+    if request.url.path in PUBLIC_READONLY_PATHS:
         return await call_next(request)
 
     # Reject cross-origin state changes from untrusted origins.
@@ -569,6 +575,45 @@ def health():
         "python": platform.python_version(),
         "platform": platform.platform(),
     }
+
+
+@app.get("/api/overview")
+def overview():
+    """Read-only aggregate counts for the external ComfyUI sidebar panel.
+
+    Public over loopback like the health probe. Returns only non-sensitive
+    counts (rules / workflows / drafts / assets / history); no Prompt texts,
+    model snapshots, notes or file paths are exposed.
+    """
+    counts: dict[str, int] = {
+        "rules": 0,
+        "workflows": 0,
+        "drafts": 0,
+        "assets": 0,
+        "history": 0,
+    }
+    try:
+        with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+            generation_history.ensure_schema(connection)
+            counts["history"] = len(generation_history.list_history(connection))
+            rule_store.ensure_schema(connection)
+            counts["rules"] = len(rule_store.list_rules(connection))
+
+        store = WorkflowStore(DATA_ROOT / "workflows")
+        workflows = store.list_workflows()
+        counts["workflows"] = len(workflows)
+        for workflow in workflows:
+            counts["drafts"] += len(store.list_drafts(workflow["id"]))
+
+        with asset_library.connect(datadir.database_path(DATA_ROOT)) as connection:
+            asset_library.ensure_schema(connection)
+            counts["assets"] = len(
+                asset_library.list_items(connection, DATA_ROOT / "assets")
+            )
+    except (OSError, ValueError, sqlite3.Error, WorkflowError) as exc:
+        return {"ok": False, "version": APP_VERSION, "error": str(exc), "counts": counts}
+
+    return {"ok": True, "version": APP_VERSION, "counts": counts}
 
 
 @app.get("/api/settings")
