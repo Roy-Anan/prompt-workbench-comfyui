@@ -1,6 +1,8 @@
-// Standalone writing / prompt panel: candidate generation without a bound
-// workflow. Posts to the backend's standalone candidate route and only keeps
-// results in local state; nothing here writes a working copy, draft or history.
+// Standalone writing panel: candidate generation without a bound workflow.
+// This page is the writing / bare-model entry point: the identity selector only
+// offers the bare model and writing-class personas (the prompt-class assistant
+// stays fixed in the workflow workbench). Results are kept in local state only;
+// nothing here writes a working copy, draft or history.
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "./api";
@@ -10,7 +12,6 @@ const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "polish", label: "润色" },
   { value: "trim", label: "精简" },
   { value: "bilingual", label: "中英对照" },
-  { value: "negative", label: "负向词" },
 ];
 
 function readStoredParam(key: string): string {
@@ -94,13 +95,7 @@ type CandidateResponse = {
   persona_kind?: string | null;
   genre?: string | null;
   style?: string | null;
-  selected_profile_id?: string | null;
-  selected_profile_name?: string | null;
-  profile_match_source?: string;
-  profile_version?: string | null;
-  fallback_reason?: string | null;
   profile_warning?: string | null;
-  architecture?: string | null;
 };
 
 type Persona = {
@@ -113,17 +108,6 @@ type Persona = {
 
 type LayerItem = { id: string; display_name: string; exists?: boolean };
 
-type PromptProfile = {
-  id: string;
-  display_name: string;
-  description: string;
-  architecture: string;
-  enabled: boolean;
-  version: string;
-  auto_eligible: boolean;
-  errors: string[];
-};
-
 type OllamaModelsResponse = {
   online: boolean;
   models: string[];
@@ -133,7 +117,6 @@ type OllamaModelsResponse = {
 
 type PersonasResponse = { items: Persona[] };
 type LayersResponse = { items: LayerItem[] };
-type PromptProfilesResponse = { items: PromptProfile[] };
 
 export default function WritingAssistant() {
   const [modelsOnline, setModelsOnline] = useState(true);
@@ -142,13 +125,11 @@ export default function WritingAssistant() {
   const [selectedModel, setSelectedModel] = useState("");
 
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [selectedPersona, setSelectedPersona] = useState(() =>
-    readStoredParam("writing.selectedPersona") || "none",
-  );
-  const [profiles, setProfiles] = useState<PromptProfile[]>([]);
-  const [selectedProfile, setSelectedProfile] = useState(() =>
-    readStoredParam("writing.selectedProfile") || "auto",
-  );
+  const [selectedPersona, setSelectedPersona] = useState(() => {
+    const stored = readStoredParam("writing.selectedPersona");
+    // 旧记忆若指向提示词类身份，回退裸模型；本页只保留写作类与裸模型。
+    return stored === "prompt_assistant" ? "none" : stored || "none";
+  });
   const [genres, setGenres] = useState<LayerItem[]>([]);
   const [selectedGenre, setSelectedGenre] = useState(() =>
     readStoredParam("writing.selectedGenre"),
@@ -181,12 +162,9 @@ export default function WritingAssistant() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  const currentPersona = personas.find((p) => p.id === selectedPersona);
-  const personaKind: string = currentPersona?.kind ?? "generic";
-  const isWritingIdentity = personaKind === "writing";
-  const candidateModeOptions = CANDIDATE_MODE_OPTIONS.filter(
-    (opt) => !isWritingIdentity || opt.value !== "negative",
-  );
+  // 本页只列出写作类身份；提示词类助手固定在工作流工作区。
+  const writingPersonas = personas.filter((p) => p.kind !== "prompt");
+  const candidateModeOptions = CANDIDATE_MODE_OPTIONS;
 
   async function loadModels() {
     try {
@@ -211,12 +189,7 @@ export default function WritingAssistant() {
   async function loadPersonas() {
     try {
       const result = await apiGet<PersonasResponse>("/api/personas");
-      const items = result.items ?? [];
-      setPersonas(items);
-      const remembered = readStoredParam("writing.selectedPersona");
-      if (!remembered && items.some((p) => p.id === "prompt_assistant")) {
-        setSelectedPersona("prompt_assistant");
-      }
+      setPersonas(result.items ?? []);
     } catch {
       setPersonas([]);
     }
@@ -240,31 +213,19 @@ export default function WritingAssistant() {
     }
   }
 
-  async function loadProfiles() {
-    try {
-      const result = await apiGet<PromptProfilesResponse>("/api/prompt-profiles");
-      setProfiles(result.items ?? []);
-    } catch {
-      // 规则套可选：失败时保留自动匹配。
-      setProfiles([]);
-    }
-  }
-
   useEffect(() => {
     void loadModels();
     void loadPersonas();
     void loadGenres();
     void loadStyles();
-    void loadProfiles();
   }, []);
 
   async function generateCandidate() {
     if (!selectedModel) return;
     setBusy(true);
     try {
-      // 写作身份没有负向模式；切身份后若记忆仍是 negative，回退起草。
       const effectiveMode =
-        isWritingIdentity && candidateMode === "negative" ? "draft" : candidateMode;
+        candidateMode === "negative" ? "draft" : candidateMode;
       const body: Record<string, unknown> = {
         model: selectedModel,
         task: taskText.trim() || null,
@@ -277,18 +238,7 @@ export default function WritingAssistant() {
       if (topP !== null) body.top_p = topP;
       if (numCtx !== null) body.num_ctx = numCtx;
 
-      const personaChoice = (selectedPersona || "none").trim();
-      body.persona = personaChoice || "none";
-
-      // 规则套仅作用于提示词类身份；三态：auto（省略）、指定 id、none（跳过）。
-      if (!isWritingIdentity) {
-        const profileChoice = (selectedProfile || "auto").trim();
-        if (profileChoice === "" || profileChoice === "none") {
-          body.prompt_profile = "none";
-        } else if (profileChoice !== "auto") {
-          body.prompt_profile = profileChoice;
-        }
-      }
+      body.persona = (selectedPersona || "none").trim() || "none";
       if (selectedGenre.trim()) body.genre = selectedGenre.trim();
       if (selectedStyle.trim()) body.style = selectedStyle.trim();
 
@@ -301,7 +251,7 @@ export default function WritingAssistant() {
         const item: CandidateItem = {
           text,
           mode: effectiveMode,
-          scope: effectiveMode === "negative" ? "negative" : "positive",
+          scope: "positive",
         };
         setCandidates((prev) => [...prev, item]);
       }
@@ -310,9 +260,6 @@ export default function WritingAssistant() {
       if (result.persona_name) parts.push(`身份：${result.persona_name}`);
       if (result.genre) parts.push(`题材：${result.genre}`);
       if (result.style) parts.push(`文风：${result.style}`);
-      if (!isWritingIdentity && result.selected_profile_name) {
-        parts.push(`Profile：${result.selected_profile_name}`);
-      }
       const profileWarning = result.profile_warning
         ? `；${result.profile_warning}`
         : "";
@@ -349,7 +296,7 @@ export default function WritingAssistant() {
       <div className="candidate-heading">
         <h3>写作助手（无工作流裸跑）</h3>
         <p className="candidate-subtitle">
-          不绑定工作流，直接由本地 LLM 起草提示词或写作内容；候选仅在本页复制使用，不进入工作副本、草稿与历史。
+          不绑定工作流，由本地 LLM 按写作身份或裸模型起草内容；可选题材与文风。候选仅在本页复制使用，不进入工作副本、草稿与历史。
         </p>
       </div>
 
@@ -402,7 +349,7 @@ export default function WritingAssistant() {
                 title="LLM 身份定位；裸模型表示不注入身份系统提示词"
               >
                 <option value="none">裸模型（不注入身份）</option>
-                {personas.map((persona) => (
+                {writingPersonas.map((persona) => (
                   <option
                     key={persona.id}
                     value={persona.id}
@@ -412,73 +359,38 @@ export default function WritingAssistant() {
                   </option>
                 ))}
               </select>
-              {!isWritingIdentity && (
-                <select
-                  value={selectedProfile}
-                  disabled={busy}
-                  onChange={(event) => {
-                    setSelectedProfile(event.target.value);
-                    persistParam("writing.selectedProfile", event.target.value);
-                  }}
-                  title="模型专用规则 Profile；自动匹配按 checkpoint 文件名与架构选择"
-                >
-                  <option value="auto">自动匹配 Profile</option>
-                  <option value="none">不使用规则套</option>
-                  {profiles.map((profile) => {
-                    const arch = profile.architecture
-                      ? `｜${profile.architecture}`
-                      : "";
-                    const stateTag = profile.enabled ? "" : "（已停用）";
-                    return (
-                      <option
-                        key={profile.id}
-                        value={profile.id}
-                        disabled={!profile.enabled}
-                      >
-                        {profile.display_name}
-                        {arch}
-                        {stateTag}
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
-              {isWritingIdentity && (
-                <>
-                  <select
-                    value={selectedGenre}
-                    disabled={busy}
-                    onChange={(event) => {
-                      setSelectedGenre(event.target.value);
-                      persistParam("writing.selectedGenre", event.target.value);
-                    }}
-                    title="写作题材设定"
-                  >
-                    <option value="">不指定题材</option>
-                    {genres.map((genre) => (
-                      <option key={genre.id} value={genre.id}>
-                        {genre.display_name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedStyle}
-                    disabled={busy}
-                    onChange={(event) => {
-                      setSelectedStyle(event.target.value);
-                      persistParam("writing.selectedStyle", event.target.value);
-                    }}
-                    title="写作文风"
-                  >
-                    <option value="">不指定文风</option>
-                    {styles.map((style) => (
-                      <option key={style.id} value={style.id}>
-                        {style.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
+              <select
+                value={selectedGenre}
+                disabled={busy}
+                onChange={(event) => {
+                  setSelectedGenre(event.target.value);
+                  persistParam("writing.selectedGenre", event.target.value);
+                }}
+                title="写作题材设定"
+              >
+                <option value="">不指定题材</option>
+                {genres.map((genre) => (
+                  <option key={genre.id} value={genre.id}>
+                    {genre.display_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedStyle}
+                disabled={busy}
+                onChange={(event) => {
+                  setSelectedStyle(event.target.value);
+                  persistParam("writing.selectedStyle", event.target.value);
+                }}
+                title="写作文风"
+              >
+                <option value="">不指定文风</option>
+                {styles.map((style) => (
+                  <option key={style.id} value={style.id}>
+                    {style.display_name}
+                  </option>
+                ))}
+              </select>
               <select
                 value={candidateMode}
                 disabled={busy}
@@ -552,9 +464,7 @@ export default function WritingAssistant() {
                 <div className="candidate-card-head">
                   <button className="candidate-title" type="button">
                     <span className="candidate-mode">{modeLabel}</span>
-                    <span className={`candidate-scope ${item.scope}`}>
-                      {item.scope === "negative" ? "写入负向" : "写入正向"}
-                    </span>
+                    <span className="candidate-scope positive">写入正向</span>
                   </button>
                   <div className="actions">
                     <button onClick={() => void copyCandidate(item)}>复制</button>

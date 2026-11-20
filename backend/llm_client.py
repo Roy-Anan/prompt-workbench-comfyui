@@ -26,7 +26,7 @@ MAX_PREDICT_TOKENS = 640
 def chat(
     ollama_url: str,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     timeout: float = DEFAULT_TIMEOUT,
     options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

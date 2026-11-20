@@ -40,6 +40,7 @@ import rule_engine
 import rule_store
 import sidebar_summary as sidebar_summary_module
 import task_queue
+import vision_api
 from asset_api import router as asset_router
 from workflow_api import router as workflow_router
 from workflow_api import system_router
@@ -420,6 +421,7 @@ app = FastAPI(
 app.include_router(workflow_router)
 app.include_router(system_router)
 app.include_router(asset_router)
+app.include_router(vision_api.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -817,6 +819,8 @@ def fetch_ollama_models(url: str) -> dict[str, Any]:
         entries = data.get("models") if isinstance(data, dict) else None
         names: list[str] = []
         details: dict[str, str] = {}
+        families: dict[str, list[str]] = {}
+        raw_details: dict[str, dict[str, Any]] = {}
         if isinstance(entries, list):
             for item in entries:
                 if isinstance(item, dict) and isinstance(item.get("name"), str):
@@ -824,13 +828,28 @@ def fetch_ollama_models(url: str) -> dict[str, Any]:
                     names.append(name)
                     item_details = item.get("details")
                     if isinstance(item_details, dict):
+                        raw_details[name] = item_details
                         param_size = item_details.get("parameter_size")
                         if isinstance(param_size, str) and param_size.strip():
                             details[name] = param_size.strip()
+                        fam = item_details.get("family")
+                        fam_list = item_details.get("families")
+                        caps = item_details.get("capabilities")
+                        tags: list[str] = []
+                        if isinstance(fam, str) and fam.strip():
+                            tags.append(fam.strip())
+                        if isinstance(fam_list, list):
+                            tags.extend(str(f).strip() for f in fam_list if str(f).strip())
+                        if isinstance(caps, list):
+                            tags.extend(str(c).strip() for c in caps if str(c).strip())
+                        families[name] = tags
+        model_vision = vision_api.probe_vision_map(url, raw_details)
         return {
             "online": True,
             "models": names,
             "model_details": details,
+            "model_families": families,
+            "model_vision": model_vision,
             "error": None,
         }
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
@@ -838,6 +857,8 @@ def fetch_ollama_models(url: str) -> dict[str, Any]:
             "online": False,
             "models": [],
             "model_details": {},
+            "model_families": {},
+            "model_vision": {},
             "error": str(exc),
         }
 
