@@ -105,3 +105,74 @@ def test_client_default_token_file_points_at_repo_userdata(monkeypatch):
 
     expected = REPO_ROOT / "userdata" / "settings" / "node_token.json"
     assert backend_client._default_token_file() == expected
+
+
+def test_extension_registers_release_node():
+    ext = _load()
+    assert "WorkbenchReleaseVram" in ext.NODE_CLASS_MAPPINGS
+    assert (
+        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchReleaseVram"]
+        == "工作台释放显存/卸载LLM"
+    )
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchReleaseVram"]
+    assert cls.CATEGORY == "Workbench/System"
+    assert cls.RETURN_TYPES == ("STRING", "STRING")
+
+
+def test_release_node_skipped_when_disabled(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    called = {"n": 0}
+
+    def fake_release(base_url="", token=""):
+        called["n"] += 1
+        return {}
+
+    monkeypatch.setattr(backend_client, "release_vram", fake_release)
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchReleaseVram"]()
+    text, raw = node.release(False, "", "")
+
+    assert "跳过" in text
+    assert called["n"] == 0
+
+
+def test_release_node_summarizes_result(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    payload = {
+        "ollama_reachable": True,
+        "ollama_stopped": ["m:v1"],
+        "ollama_errors": [],
+        "ollama_still_resident": [],
+        "comfyui_freed": True,
+        "comfyui_error": None,
+    }
+    monkeypatch.setattr(
+        backend_client, "release_vram", lambda base_url="", token="": payload
+    )
+
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchReleaseVram"]()
+    text, raw = node.release(True, "", "")
+
+    assert "已卸载 LLM：m:v1" in text
+    assert "ComfyUI 模型显存已释放" in text
+    assert "m:v1" in raw
+
+
+def test_release_node_reports_error(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    monkeypatch.setattr(
+        backend_client,
+        "release_vram",
+        lambda base_url="", token="": {"error": "URLError: x"},
+    )
+
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchReleaseVram"]()
+    text, raw = node.release(True, "", "")
+
+    assert "卸载失败" in text
+    assert raw == "{}"

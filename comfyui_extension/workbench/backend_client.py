@@ -98,6 +98,37 @@ def _get(
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
+def _post(
+    path: str,
+    base_url: str = "",
+    token: str = "",
+    body: dict[str, Any] | None = None,
+    auth: bool = True,
+) -> dict[str, Any]:
+    url = _base_url(base_url) + path
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    tok = _token(token)
+    if auth and tok:
+        headers["Authorization"] = f"Bearer {tok}"
+
+    payload = json.dumps(body or {}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8")
+        return json.loads(raw) if raw else {}
+    except Exception as exc:  # network/parse failure must not crash the canvas
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def release_vram(base_url: str = "", token: str = "") -> dict[str, Any]:
+    """Ask the backend to unload resident Ollama models and free ComfyUI VRAM."""
+    return _post("/api/system/release-vram", base_url, token)
+
+
 def health(base_url: str = "", token: str = "") -> dict[str, Any]:
     """Unauthenticated identity probe; exposes app id/version only."""
     return _get("/api/health", base_url, token, auth=False)

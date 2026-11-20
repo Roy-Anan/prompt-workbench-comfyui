@@ -12,7 +12,8 @@ comfyui_extension/
 └─ workbench/                # 节点包（被 ComfyUI 扫描加载）
    ├─ __init__.py            # 注册 NODE_CLASS_MAPPINGS、WEB_DIRECTORY
    ├─ backend_client.py      # 回环 HTTP 客户端（仅标准库，对接现有后端）
-   ├─ rules_node.py          # 规则只读查询节点（首个落地节点）
+   ├─ rules_node.py          # 规则只读查询节点
+   ├─ release_node.py        # 卸载 LLM / 释放显存节点
    └─ web/                   # 侧边栏面板前端（占位，后续实现）
 ```
 
@@ -32,13 +33,15 @@ ComfyUI 启动时额外加载本目录的路径配置：
 节点运行在整合包 Python 里，通过回环地址访问现有 FastAPI 后端
 （默认 `http://127.0.0.1:17890`，可用 `WORKBENCH_API_URL` 覆盖）。
 
-### 节点凭据（只读）
+### 节点凭据（默认只读 + 窄白名单）
 
 ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首次启动时
-在数据根持久化一个节点专用只读令牌 `settings/node_token.json`（不入库）。
+在数据根持久化一个节点专用令牌 `settings/node_token.json`（不入库）。
 客户端按以下顺序取凭据：节点输入框 > 环境变量 `WORKBENCH_SESSION_TOKEN`
-> 凭据文件。该令牌只放行 GET/HEAD/OPTIONS，任何写请求由后端拒绝 403；
-文件位置可用 `WORKBENCH_NODE_TOKEN_FILE` 或 `WORKBENCH_DATA_ROOT` 覆盖。
+> 凭据文件。该令牌默认只放行 GET/HEAD/OPTIONS；仅少数幂等的本地受控动作
+（当前为 `POST /api/system/release-vram` 卸载 LLM/释放显存）在后端白名单内
+放行，其余写请求一律 403。文件位置可用 `WORKBENCH_NODE_TOKEN_FILE` 或
+`WORKBENCH_DATA_ROOT` 覆盖。
 
 ## 查重结论：复用现成插件 vs 自建
 
@@ -62,7 +65,8 @@ ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首�
 
 1. **骨架 + 最简节点**（已落地）：规则查询节点，验证外部目录能被 ComfyUI
    识别加载；配套节点专用只读令牌机制（凭据文件 + 后端只读放行）。
-2. 生图前卸载 LLM 节点，复用现有后端卸载链路。
+2. **卸载 LLM / 释放显存节点**（已落地）：复用后端 `release-vram` 链路，
+   节点令牌经窄白名单调用；返回卸载摘要与原始 JSON。
 3. LLM 候选节点，对接现有五模式与规则联动。
 4. 侧边栏面板：草稿箱、素材库、LoRA 资料、规则编辑，对接后端数据库。
 5. 画布桥：节点与画布节点读写、白名单确认；最后再评估服务层是否并入

@@ -40,6 +40,31 @@ def test_node_token_rejects_state_changing_request(client):
     assert resp.status_code == 403
 
 
+def test_node_token_allowed_on_release_vram(client, monkeypatch):
+    test_client, main = client
+    import workflow_api
+
+    payload = {
+        "ollama_reachable": True,
+        "ollama_stopped": ["m:v1"],
+        "ollama_errors": [],
+        "ollama_still_resident": [],
+        "comfyui_freed": True,
+        "comfyui_error": None,
+    }
+    monkeypatch.setattr(
+        workflow_api.comfy_client,
+        "release_resources",
+        lambda ollama_url, comfyui_url, timeout=5.0: payload,
+    )
+
+    resp = test_client.post(
+        "/api/system/release-vram", headers=_node_headers(main)
+    )
+    assert resp.status_code == 200
+    assert resp.json() == payload
+
+
 def test_missing_or_wrong_token_is_rejected(client):
     test_client, main = client
 

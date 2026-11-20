@@ -93,9 +93,15 @@ SESSION_TICKETS: set[str] = set()
 # Read-only credential for local ComfyUI extension nodes. Nodes run in the
 # integrated Python process and cannot see the launcher's in-memory bootstrap
 # token, so a separate token is persisted under the data root and loaded once
-# at startup. The backend rejects state-changing requests that present it.
+# at startup. The backend rejects state-changing requests that present it,
+# except for the narrow, idempotent node actions listed below.
 NODE_TOKEN = ""
 _node_token_loaded = False
+
+# State-changing endpoints a node token is allowed to call. Each must be a
+# best-effort, idempotent local action that does not mutate user drafts, rules,
+# or settings. Anything else stays read-only for node callers.
+NODE_WRITE_ALLOWED_PATHS = {"/api/system/release-vram"}
 
 CSRF_HEADER = "X-Workbench-CSRF"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
@@ -469,13 +475,15 @@ async def require_session(request: Request, call_next):
     else:
         authorized, session_kind = _authorized(request)
 
-    # The node token is read-only: reject state-changing requests even when
-    # the token itself is valid.
+    # The node token is read-only except for a narrow set of idempotent local
+    # actions. Reject any other state-changing request even when the token
+    # itself is valid.
     if session_kind == "node" and request.method not in SAFE_METHODS:
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Node token is read-only"},
-        )
+        if request.url.path not in NODE_WRITE_ALLOWED_PATHS:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Node token is read-only"},
+            )
 
     # CSRF protection for browser cookie sessions on state-changing requests.
     # The Bearer bootstrap token is a non-browser caller and does not carry
