@@ -25,9 +25,10 @@
 ## 3. 未验证 / 遗留项
 
 - **R140 真机验收已通过**：本地 LLM 候选全链路（提示词类/写作类/裸模型三种身份）、画布新节点下拉与三口连线、题材/文风注入效果已在真机跑通核对；前端 tsc/build 与后端单测/扩展测试回归兜底。
-- **工作台前端 standalone 入口已放开（2026-11-20）**：新增独立「写作助手」页签，不绑定工作流即可选身份/题材/文风/模式直接生成，打后端独立轮次路由 `POST /api/workflows/prompt/candidates`（无 `workflow_id`）；候选仅在本页复制使用，不写入工作副本、草稿与历史。
+- **工作台前端 standalone 入口已放开（2026-11-20）**：新增独立「写作助手」页签，不绑定工作流即可选身份/题材/文风/模式直接生成，打后端独立轮次路由 `POST /api/workflows/prompt/candidates`（无 `workflow_id`）；候选仅在本页使用，点「存入历史」才归档到写作历史，不写入工作副本与草稿。
 - **身份按页签分割（2026-11-20）**：工作流工作区固定提示词助手身份（`prompt_assistant`），不提供身份下拉、不读身份记忆，保留规则套与负向模式；写作助手页签身份下拉仅列裸模型（`none`）与写作助手（`writing_assistant`），去掉规则套下拉，题材/文风恒显，模式不含负向词。
-- **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述上传图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门），结果只读不写工作副本/草稿/历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**已真机跑通识别**：由同源 Qwen3-VL-8B-Instruct 视觉投影器（mmproj Q8_0，ModelScope 官方 GGUF 仓库）与本机 heretic 语言权重组装出新标签 `qwen3-vl:latest`，工作台页签上传图片可返回中文描述；纯文本底模与未挂投影器的 `qwen3:latest` 被精确过滤、不进下拉。
+- **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门）。图片可从素材库挑选（历史只引用 `asset_id`、不存副本），也可本地上传临时图（临时图不进历史、不留图）；识别结果可连同素材引用主动存入图生文历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**已真机跑通识别**：由同源 Qwen3-VL-8B-Instruct 视觉投影器（mmproj Q8_0，ModelScope 官方 GGUF 仓库）与本机 heretic 语言权重组装出新标签 `qwen3-vl:latest`，工作台页签上传图片可返回中文描述；纯文本底模与未挂投影器的 `qwen3:latest` 被精确过滤、不进下拉。
+- **统一生成历史（2026-11-20）**：历史页签聚合三类记录——提示词（沿用 `generation_history`，仅出图任务）、图生文（新表 `vision_history`，素材引用）、写作（新表 `writing_history`，仅主动保存落库）；后端 `GET /api/history/all` 按分项聚合并返回计数，`DELETE /api/history/{kind}/{id}` 彻底删除（不做回收站，不联动草稿/素材原图/ComfyUI 原图）。三类各一张表、同一 SQLite 库，随整库备份自动纳入。
 - **已知环境型测试失败（非回归，勿改测试逻辑）**：
   - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。
   - `test_sidebar_summary.py::test_empty_sections_report_zero_totals`：读到本机真实非零计数。

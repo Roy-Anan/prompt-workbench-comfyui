@@ -552,6 +552,13 @@ def delete_item(
     connection.commit()
 
 
+def get_record(
+    connection: sqlite3.Connection, asset_id: int, assets_dir: Path | None = None
+) -> dict[str, Any] | None:
+    """Public read access to one asset record (used by other modules)."""
+    return _get_record(connection, asset_id, assets_dir)
+
+
 def resolve_image_path(
     connection: sqlite3.Connection,
     assets_dir: Path,

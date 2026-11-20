@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPost } from "./api";
 
 type HistoryView = "list" | "grid" | "timeline";
 
@@ -63,6 +63,8 @@ type ModelFileKey = "checkpoints" | "loras" | "vaes" | "clips";
 type LinkedDraft = { id: string; name: string };
 
 type HistoryRecord = {
+  kind?: "prompt";
+  id?: string;
   prompt_id: string;
   workflow_id: string;
   created_at: string;
@@ -74,6 +76,42 @@ type HistoryRecord = {
   last_error: string | null;
   linked_draft: LinkedDraft | null;
 };
+
+type VisionAsset = { asset_id: number; name: string; exists: boolean };
+
+type VisionRecord = {
+  kind: "vision";
+  id: string;
+  created_at: string;
+  model: string | null;
+  prompt: string | null;
+  description: string;
+  assets: VisionAsset[];
+};
+
+type WritingRecord = {
+  kind: "writing";
+  id: string;
+  created_at: string;
+  model: string | null;
+  persona_id: string | null;
+  persona_name: string | null;
+  genre: string | null;
+  style: string | null;
+  mode: string | null;
+  task: string | null;
+  output_text: string;
+};
+
+type AggregateRecord = HistoryRecord | VisionRecord | WritingRecord;
+
+function isPromptRecord(record: AggregateRecord): record is HistoryRecord {
+  return record.kind !== "vision" && record.kind !== "writing";
+}
+
+function recordKey(record: AggregateRecord): string {
+  return `${record.kind ?? "prompt"}/${record.id ?? (record as HistoryRecord).prompt_id}`;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   submitted: "待运行",
@@ -160,11 +198,11 @@ function autoDraftName(record: HistoryRecord): string {
   return `${date} ${summary}`.trim().slice(0, 120);
 }
 
-function groupByDay(records: HistoryRecord[]): { day: string; items: HistoryRecord[] }[] {
+function groupByDay(records: AggregateRecord[]): { day: string; items: AggregateRecord[] }[] {
   const sorted = [...records].sort((a, b) =>
     a.created_at < b.created_at ? 1 : -1,
   );
-  const groups: { day: string; items: HistoryRecord[] }[] = [];
+  const groups: { day: string; items: AggregateRecord[] }[] = [];
   const index = new Map<string, number>();
   for (const record of sorted) {
     const day = record.created_at.slice(0, 10) || "未知日期";
@@ -352,8 +390,23 @@ function LightboxViewer({
   );
 }
 
+type HistoryKind = "all" | "prompt" | "vision" | "writing";
+
+const KIND_OPTIONS: { key: HistoryKind; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "prompt", label: "提示词" },
+  { key: "vision", label: "图生文" },
+  { key: "writing", label: "写作" },
+];
+
 export default function HistoryPanel() {
-  const [items, setItems] = useState<HistoryRecord[] | null>(null);
+  const [items, setItems] = useState<AggregateRecord[] | null>(null);
+  const [counts, setCounts] = useState<{
+    prompt: number;
+    vision: number;
+    writing: number;
+  }>({ prompt: 0, vision: 0, writing: 0 });
+  const [kindFilter, setKindFilter] = useState<HistoryKind>("all");
   const [error, setError] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState(() => readStoredFilter("workbench.historyStatus"));
@@ -374,6 +427,8 @@ export default function HistoryPanel() {
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
   const [comparePicks, setComparePicks] = useState<ComparePick[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   function openLightbox(images: HistoryImage[], index: number) {
     setLightbox({ images, index });
@@ -434,8 +489,12 @@ export default function HistoryPanel() {
 
   async function load() {
     try {
-      const body = await apiGet<{ items: HistoryRecord[] }>("/api/history");
+      const body = await apiGet<{
+        items: AggregateRecord[];
+        counts: { prompt: number; vision: number; writing: number };
+      }>(`/api/history/all?kind=${kindFilter}`);
       setItems(body.items);
+      setCounts(body.counts);
       let jump: string | null = null;
       try {
         jump = localStorage.getItem("workbench.jumpHistory");
@@ -443,7 +502,7 @@ export default function HistoryPanel() {
         // 忽略本地存储读取失败。
       }
       if (jump) {
-        if (body.items.some((record) => record.prompt_id === jump)) {
+        if (body.items.some((record) => recordKey(record) === `prompt/${jump}`)) {
           setOpenId(jump);
         }
         try {
@@ -461,7 +520,8 @@ export default function HistoryPanel() {
 
   useEffect(() => {
     void load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kindFilter]);
 
   function startDraft(record: HistoryRecord) {
     setDraftingId(record.prompt_id);
@@ -521,15 +581,70 @@ export default function HistoryPanel() {
     }
   }
 
+  async function removeRecord(record: AggregateRecord) {
+    if (deleteBusy) return;
+    const kind = record.kind ?? "prompt";
+    const id = record.id ?? (record as HistoryRecord).prompt_id;
+    const key = `${kind}/${id}`;
+    if (confirmDeleteKey !== key) {
+      setConfirmDeleteKey(key);
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      await apiDelete(`/api/history/${kind}/${id}`, {});
+      setConfirmDeleteKey(null);
+      await load();
+    } catch (err) {
+      setError(`删除失败：${String(err)}`);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function goToWorkbench() {
     window.dispatchEvent(
       new CustomEvent("workbench:navigate", { detail: { page: "workflows" } }),
     );
   }
 
+  const showPromptFilters = kindFilter === "all" || kindFilter === "prompt";
+
   const workflowOptions = Array.from(
-    new Set((items || []).map((record) => record.workflow_id)),
+    new Set(
+      (items || [])
+        .filter(isPromptRecord)
+        .map((record) => record.workflow_id),
+    ),
   );
+
+  function haystackOf(record: AggregateRecord): string {
+    if (isPromptRecord(record)) {
+      return [
+        record.positive_prompt,
+        record.negative_prompt,
+        JSON.stringify(record.model_snapshot),
+      ]
+        .join(" ")
+        .toLowerCase();
+    }
+    if (record.kind === "vision") {
+      return [record.prompt, record.description, record.model, ...record.assets.map((a) => a.name)]
+        .join(" ")
+        .toLowerCase();
+    }
+    return [
+      record.persona_name,
+      record.genre,
+      record.style,
+      record.mode,
+      record.task,
+      record.output_text,
+      record.model,
+    ]
+      .join(" ")
+      .toLowerCase();
+  }
 
   function exportHistory() {
     const payload = {
@@ -553,52 +668,197 @@ export default function HistoryPanel() {
 
   const keywordTerm = keyword.trim().toLowerCase();
   const filtered = (items || []).filter((record) => {
-    if (statusFilter && record.task_status !== statusFilter) return false;
-    if (workflowFilter && record.workflow_id !== workflowFilter) return false;
-    const day = record.created_at.slice(0, 10);
-    if (fromDate && day < fromDate) return false;
-    if (toDate && day > toDate) return false;
-    if (keywordTerm) {
-      const haystack = [
-        record.positive_prompt,
-        record.negative_prompt,
-        JSON.stringify(record.model_snapshot),
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (!haystack.includes(keywordTerm)) return false;
+    if (isPromptRecord(record)) {
+      if (statusFilter && record.task_status !== statusFilter) return false;
+      if (workflowFilter && record.workflow_id !== workflowFilter) return false;
+      const day = record.created_at.slice(0, 10);
+      if (fromDate && day < fromDate) return false;
+      if (toDate && day > toDate) return false;
     }
+    if (keywordTerm && !haystackOf(record).includes(keywordTerm)) return false;
     return true;
   });
 
-  function renderRecord(record: HistoryRecord) {
-    const open = openId === record.prompt_id;
-    const checkpoints = snapshotFiles(record.model_snapshot, "checkpoints");
-    const loras = snapshotFiles(record.model_snapshot, "loras");
-    const images = record.images || [];
-    return (
-      <div className="rule-row" key={record.prompt_id}>
-        <div className="rule-row-main">
-          <strong>{summarize(record.positive_prompt)}</strong>
-          <small>
-            {formatTime(record.created_at)} · 工作流 {record.workflow_id.slice(0, 8)}
-            {checkpoints.length > 0 && ` · ${checkpoints.join("、")}`}
-            {loras.length > 0 && ` · LoRA ${loras.join("、")}`}
-          </small>
-          {record.last_error && (
-            <small className="workflow-warning">{record.last_error}</small>
+const WRITING_MODE_LABEL: Record<string, string> = {
+  draft: "起草",
+  polish: "润色",
+  trim: "精简",
+  bilingual: "中英对照",
+};
+
+function assetImageUrl(assetId: number): string {
+  return `/api/assets/image?asset_id=${assetId}`;
+}
+
+function deleteButton(record: AggregateRecord) {
+  const key = recordKey(record);
+  const confirming = confirmDeleteKey === key;
+  return (
+    <button
+      className={confirming ? "workflow-warning" : "secondary"}
+      disabled={deleteBusy}
+      onClick={() => void removeRecord(record)}
+      title="彻底删除这条历史记录；不影响草稿、素材原图与出图文件"
+    >
+      {confirming ? "确认删除？" : "删除"}
+    </button>
+  );
+}
+
+function renderVisionRecord(record: VisionRecord) {
+  const open = openId === record.id;
+  return (
+    <div className="rule-row" key={recordKey(record)}>
+      <div className="rule-row-main">
+        <strong>{summarize(record.description)}</strong>
+        <small>
+          {formatTime(record.created_at)}
+          {record.model ? ` · ${record.model}` : ""}
+        </small>
+        {record.prompt && <small className="muted">提问：{record.prompt}</small>}
+      </div>
+      <div className="rule-row-meta">
+        <span className="compare-badge">图生文</span>
+        <button onClick={() => setOpenId(open ? null : record.id)}>
+          {open ? "收起" : "详情"}
+        </button>
+        {deleteButton(record)}
+      </div>
+      {open && (
+        <div className="profile-preview" style={{ width: "100%" }}>
+          <div className="rule-row">
+            <div className="rule-row-main">
+              <strong>引用素材</strong>
+              <div className="history-images">
+                {record.assets.map((asset) =>
+                  asset.exists ? (
+                    <figure key={asset.asset_id}>
+                      <img
+                        src={assetImageUrl(asset.asset_id)}
+                        alt={asset.name}
+                        loading="lazy"
+                      />
+                      <figcaption>{asset.name}</figcaption>
+                    </figure>
+                  ) : (
+                    <figure key={asset.asset_id}>
+                      <small className="muted">{asset.name}（素材已失效）</small>
+                    </figure>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="rule-row">
+            <div className="rule-row-main">
+              <strong>识别描述</strong>
+              <small>{record.description}</small>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderWritingRecord(record: WritingRecord) {
+  const open = openId === record.id;
+  const tags = [
+    record.persona_name,
+    record.genre,
+    record.style,
+    record.mode ? WRITING_MODE_LABEL[record.mode] : null,
+  ].filter(Boolean);
+  return (
+    <div className="rule-row" key={recordKey(record)}>
+      <div className="rule-row-main">
+        <strong>{summarize(record.output_text)}</strong>
+        <small>
+          {formatTime(record.created_at)}
+          {record.model ? ` · ${record.model}` : ""}
+          {tags.length > 0 ? ` · ${tags.join("、")}` : ""}
+        </small>
+        {record.task && <small className="muted">任务：{record.task}</small>}
+      </div>
+      <div className="rule-row-meta">
+        <span className="compare-badge">写作</span>
+        <button onClick={() => setOpenId(open ? null : record.id)}>
+          {open ? "收起" : "详情"}
+        </button>
+        {deleteButton(record)}
+      </div>
+      {open && (
+        <div className="profile-preview" style={{ width: "100%" }}>
+          {(record.persona_name || record.genre || record.style) && (
+            <div className="rule-row">
+              <div className="rule-row-main">
+                <strong>设定</strong>
+                <small>
+                  {[
+                    `身份：${record.persona_name || "裸模型"}`,
+                    `题材：${record.genre || "—"}`,
+                    `文风：${record.style || "—"}`,
+                  ].join(" · ")}
+                </small>
+              </div>
+            </div>
           )}
+          {record.task && (
+            <div className="rule-row">
+              <div className="rule-row-main">
+                <strong>任务要求</strong>
+                <small>{record.task}</small>
+              </div>
+            </div>
+          )}
+          <div className="rule-row">
+            <div className="rule-row-main">
+              <strong>成文内容</strong>
+              <small>{record.output_text}</small>
+            </div>
+          </div>
         </div>
-        <div className="rule-row-meta">
-          <span className={`compare-badge ${record.task_status}`}>
-            {STATUS_LABEL[record.task_status] ?? record.task_status}
-          </span>
-          <button
-            onClick={() => setOpenId(open ? null : record.prompt_id)}
-          >
-            {open ? "收起" : "详情"}
-          </button>
-        </div>
+      )}
+    </div>
+  );
+}
+
+function renderRecord(record: AggregateRecord) {
+  if (!isPromptRecord(record)) {
+    return record.kind === "vision" ? (
+      renderVisionRecord(record)
+    ) : (
+      renderWritingRecord(record)
+    );
+  }
+  const open = openId === record.prompt_id;
+  const checkpoints = snapshotFiles(record.model_snapshot, "checkpoints");
+  const loras = snapshotFiles(record.model_snapshot, "loras");
+  const images = record.images || [];
+  return (
+    <div className="rule-row" key={record.prompt_id}>
+      <div className="rule-row-main">
+        <strong>{summarize(record.positive_prompt)}</strong>
+        <small>
+          {formatTime(record.created_at)} · 工作流 {record.workflow_id.slice(0, 8)}
+          {checkpoints.length > 0 && ` · ${checkpoints.join("、")}`}
+          {loras.length > 0 && ` · LoRA ${loras.join("、")}`}
+        </small>
+        {record.last_error && (
+          <small className="workflow-warning">{record.last_error}</small>
+        )}
+      </div>
+      <div className="rule-row-meta">
+        <span className={`compare-badge ${record.task_status}`}>
+          {STATUS_LABEL[record.task_status] ?? record.task_status}
+        </span>
+        <button
+          onClick={() => setOpenId(open ? null : record.prompt_id)}
+        >
+          {open ? "收起" : "详情"}
+        </button>
+        {deleteButton(record)}
+      </div>
 
         {open && (
           <div className="profile-preview" style={{ width: "100%" }}>
@@ -744,7 +1004,7 @@ export default function HistoryPanel() {
     <section className="panel">
       <div className="section-heading">
         <div>
-          <p>提交时刻固化的 Prompt 与模型快照；图片只记录文件名与存在性，不复制原图。</p>
+          <p>汇总提示词出图、图生文与写作三类历史；图片只记录引用与存在性，不复制原图，删除为彻底删除。</p>
         </div>
         <div className="actions">
           {VIEW_OPTIONS.map((option) => (
@@ -773,10 +1033,30 @@ export default function HistoryPanel() {
         </div>
       </div>
 
+      <div className="history-kind-chips">
+        {KIND_OPTIONS.map((option) => {
+          const total =
+            option.key === "all"
+              ? counts.prompt + counts.vision + counts.writing
+              : counts[option.key];
+          return (
+            <button
+              key={option.key}
+              className={kindFilter === option.key ? "active" : ""}
+              onClick={() => setKindFilter(option.key)}
+            >
+              {option.label}（{total}）
+            </button>
+          );
+        })}
+      </div>
+
       {error && <p className="workflow-warning">{error}</p>}
 
       {items !== null && items.length > 0 && (
         <div className="history-filters">
+          {showPromptFilters && (
+            <>
           <label>
             状态
             <select
@@ -814,18 +1094,6 @@ export default function HistoryPanel() {
             </label>
           )}
           <label>
-            关键词
-            <input
-              type="text"
-              value={keyword}
-              placeholder="Prompt 或模型文件名"
-              onChange={(event) => {
-                setKeyword(event.target.value);
-                persistFilter("workbench.historyKeyword", event.target.value);
-              }}
-            />
-          </label>
-          <label>
             开始日期
             <input
               type="date"
@@ -844,6 +1112,20 @@ export default function HistoryPanel() {
               onChange={(event) => {
                 setToDate(event.target.value);
                 persistFilter("workbench.historyTo", event.target.value);
+              }}
+            />
+          </label>
+            </>
+          )}
+          <label>
+            关键词
+            <input
+              type="text"
+              value={keyword}
+              placeholder="Prompt、描述或成文内容"
+              onChange={(event) => {
+                setKeyword(event.target.value);
+                persistFilter("workbench.historyKeyword", event.target.value);
               }}
             />
           </label>

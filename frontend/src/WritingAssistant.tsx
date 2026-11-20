@@ -81,6 +81,13 @@ type CandidateItem = {
   text: string;
   mode: string;
   scope: CandidateScope;
+  model: string;
+  persona_id: string | null;
+  persona_name: string | null;
+  genre: string | null;
+  style: string | null;
+  task: string;
+  saved?: boolean;
 };
 
 type CandidateResponse = {
@@ -160,6 +167,7 @@ export default function WritingAssistant() {
 
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   // 本页只列出写作类身份；提示词类助手固定在工作流工作区。
@@ -252,6 +260,12 @@ export default function WritingAssistant() {
           text,
           mode: effectiveMode,
           scope: "positive",
+          model: result.model,
+          persona_id: result.persona_id ?? null,
+          persona_name: result.persona_name ?? null,
+          genre: result.genre ?? null,
+          style: result.style ?? null,
+          task: taskText.trim(),
         };
         setCandidates((prev) => [...prev, item]);
       }
@@ -286,6 +300,32 @@ export default function WritingAssistant() {
     setCandidates((prev) => prev.filter((_, i) => i !== index));
   }
 
+  async function saveCandidate(index: number) {
+    const item = candidates[index];
+    if (!item || savingIndex !== null) return;
+    setSavingIndex(index);
+    try {
+      await apiPost("/api/history/writing", {
+        model: item.model,
+        persona_id: item.persona_id,
+        persona_name: item.persona_name,
+        genre: item.genre,
+        style: item.style,
+        mode: item.mode,
+        task: item.task,
+        output_text: item.text,
+      });
+      setCandidates((prev) =>
+        prev.map((entry, i) => (i === index ? { ...entry, saved: true } : entry)),
+      );
+      setMessage("候选已存入写作历史（仅在主动保存时归档）。");
+    } catch (error) {
+      setMessage(`存入历史失败：${String(error)}`);
+    } finally {
+      setSavingIndex(null);
+    }
+  }
+
   function clearCandidates() {
     setCandidates([]);
     setMessage("候选已清空（未写入工作副本）。");
@@ -296,7 +336,7 @@ export default function WritingAssistant() {
       <div className="candidate-heading">
         <h3>写作助手（无工作流裸跑）</h3>
         <p className="candidate-subtitle">
-          不绑定工作流，由本地 LLM 按写作身份或裸模型起草内容；可选题材与文风。候选仅在本页复制使用，不进入工作副本、草稿与历史。
+          不绑定工作流，由本地 LLM 按写作身份或裸模型起草内容；可选题材与文风。候选仅在本页使用，点「存入历史」才归档，不写入工作副本与草稿。
         </p>
       </div>
 
@@ -467,6 +507,16 @@ export default function WritingAssistant() {
                     <span className="candidate-scope positive">写入正向</span>
                   </button>
                   <div className="actions">
+                    {item.saved ? (
+                      <small className="workflow-meta">已存历史</small>
+                    ) : (
+                      <button
+                        onClick={() => void saveCandidate(index)}
+                        disabled={savingIndex !== null}
+                      >
+                        {savingIndex === index ? "保存中…" : "存入历史"}
+                      </button>
+                    )}
                     <button onClick={() => void copyCandidate(item)}>复制</button>
                     <button onClick={() => removeCandidate(index)}>移除</button>
                   </div>

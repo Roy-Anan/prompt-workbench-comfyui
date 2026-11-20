@@ -951,6 +951,21 @@ button:disabled { background: var(--w-bg-2); color: var(--w-text-3); border-colo
 .history-timeline { gap: var(--sp-3); }
 .timeline-group { gap: 8px; }
 .history-filters { margin: var(--sp-2) 0; gap: var(--sp-3); }
+.history-kind-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: var(--sp-2) 0; }
+.history-kind-chips button {
+  border: 1px solid var(--w-border);
+  background: var(--w-readonly-bg);
+  color: var(--w-text-2);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.history-kind-chips button.active {
+  background: var(--w-bg-blue);
+  border-color: var(--w-brand);
+  color: var(--w-brand);
+  font-weight: 600;
+}
 
 /* 长路径 / 长文件名截断时不撑破布局 */
 .dir-path,

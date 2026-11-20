@@ -381,6 +381,20 @@ def get_by_prompt_id(
     return _row(row)
 
 
+def delete_by_prompt_id(connection: sqlite3.Connection, prompt_id: str) -> bool:
+    """Permanently delete one out-prompt history row.
+
+    Only the history index row is removed; the ComfyUI output images on disk
+    and any linked draft are untouched.
+    """
+    cursor = connection.execute(
+        "DELETE FROM generation_history WHERE prompt_id = ?",
+        (prompt_id,),
+    )
+    connection.commit()
+    return cursor.rowcount > 0
+
+
 def _escape_like(value: str) -> str:
     """Escape LIKE wildcards so a literal search term matches literally."""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

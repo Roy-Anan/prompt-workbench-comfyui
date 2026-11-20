@@ -29,6 +29,7 @@ import backup_restore
 import comfy_tasks
 import datadir
 import generation_history
+import llm_history
 import lora_metadata
 import model_catalog
 import model_identity
@@ -173,6 +174,7 @@ def initialize_database(settings: dict[str, Any]) -> str:
         model_identity.ensure_schema(connection)
         rule_store.ensure_schema(connection)
         asset_library.ensure_schema(connection)
+        llm_history.ensure_schema(connection)
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -1253,6 +1255,198 @@ async def comfyui_ws_proxy(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
+
+
+class VisionHistoryEntry(BaseModel):
+    asset_id: int
+    name: str | None = None
+
+
+class VisionHistorySave(BaseModel):
+    model: str | None = None
+    prompt: str | None = None
+    description: str
+    assets: list[VisionHistoryEntry] = []
+
+
+class WritingHistorySave(BaseModel):
+    model: str | None = None
+    persona_id: str | None = None
+    persona_name: str | None = None
+    genre: str | None = None
+    style: str | None = None
+    mode: str | None = None
+    task: str | None = None
+    output_text: str
+
+
+HISTORY_KINDS = ("prompt", "vision", "writing")
+
+
+@app.get("/api/history/all")
+def history_aggregated(kind: str = "all", keyword: str | None = None):
+    """Unified archive across the three generators.
+
+    ``kind`` filters one of ``prompt`` (out-prompt tasks only), ``vision``
+    (image-to-text) or ``writing`` (manually saved drafts); ``all`` merges
+    them newest-first. Counts are returned unfiltered for the section chips.
+    """
+    selected = kind or "all"
+    if selected not in {"all", *HISTORY_KINDS}:
+        raise HTTPException(400, f"Unknown history kind: {kind}")
+
+    output_dir = load_settings().get("storage", {}).get("output", "")
+    store = WorkflowStore(DATA_ROOT / "workflows")
+    assets_dir = DATA_ROOT / "assets"
+
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        # Asset records are read by column name; keep the Row factory enabled.
+        connection.row_factory = sqlite3.Row
+        generation_history.ensure_schema(connection)
+        llm_history.ensure_schema(connection)
+        asset_library.ensure_schema(connection)
+
+        prompt_all = generation_history.list_history(connection)
+        vision_all = llm_history.list_vision(connection)
+        writing_all = llm_history.list_writing(connection)
+
+        counts = {
+            "prompt": len(prompt_all),
+            "vision": len(vision_all),
+            "writing": len(writing_all),
+        }
+
+        items: list[dict[str, Any]] = []
+
+        if selected in {"all", "prompt"}:
+            prompt_items = generation_history.list_history(
+                connection, keyword=keyword
+            )
+            for item in prompt_items:
+                item["kind"] = "prompt"
+                item["id"] = item.get("prompt_id")
+                item["images"] = generation_history.annotate_exists(
+                    item.get("images") or [], output_dir
+                )
+                item["linked_draft"] = store.find_linked_draft(
+                    item.get("workflow_id") or "", item.get("prompt_id") or ""
+                )
+            items.extend(prompt_items)
+
+        if selected in {"all", "vision"}:
+            vision_items = llm_history.list_vision(connection, keyword=keyword)
+            for item in vision_items:
+                resolved: list[dict[str, Any]] = []
+                for asset in item["assets"]:
+                    record = asset_library.get_record(
+                        connection, asset["asset_id"], assets_dir
+                    )
+                    resolved.append(
+                        {
+                            "asset_id": asset["asset_id"],
+                            "name": record["name"] if record else asset["name"],
+                            "exists": bool(record and record["exists"]),
+                        }
+                    )
+                item["assets"] = resolved
+            items.extend(vision_items)
+
+        if selected in {"all", "writing"}:
+            items.extend(llm_history.list_writing(connection, keyword=keyword))
+
+    items.sort(key=lambda row: row.get("created_at") or "", reverse=True)
+    return {"items": items, "counts": counts}
+
+
+@app.post("/api/history/vision")
+def history_save_vision(payload: VisionHistorySave):
+    """Persist one image-to-text result, referencing asset-library pictures.
+
+    Only images picked from the asset library may be archived; temporary local
+    uploads stay out of history and no image bytes are copied here.
+    """
+    description = (payload.description or "").strip()
+    if not description:
+        raise HTTPException(400, "识别结果为空，不能存入历史")
+    if not payload.assets:
+        raise HTTPException(400, "请从素材库选择图片后再存入历史")
+
+    asset_ids: list[int] = []
+    image_names: list[str] = []
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        connection.row_factory = sqlite3.Row
+        llm_history.ensure_schema(connection)
+        asset_library.ensure_schema(connection)
+        for entry in payload.assets:
+            record = asset_library.get_record(
+                connection, entry.asset_id, DATA_ROOT / "assets"
+            )
+            if record is None:
+                raise HTTPException(404, f"素材 {entry.asset_id} 不存在或已删除")
+            asset_ids.append(entry.asset_id)
+            image_names.append(entry.name or record["name"])
+        record = llm_history.record_vision(
+            connection,
+            model=payload.model,
+            prompt=payload.prompt,
+            description=description,
+            asset_ids=asset_ids,
+            image_names=image_names,
+        )
+    return record
+
+
+@app.post("/api/history/writing")
+def history_save_writing(payload: WritingHistorySave):
+    """Persist one writing-assistant candidate; only on explicit user save."""
+    if not (payload.output_text or "").strip():
+        raise HTTPException(400, "候选内容为空，不能存入历史")
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        llm_history.ensure_schema(connection)
+        return llm_history.record_writing(
+            connection,
+            model=payload.model,
+            persona_id=payload.persona_id,
+            persona_name=payload.persona_name,
+            genre=payload.genre,
+            style=payload.style,
+            mode=payload.mode,
+            task=payload.task,
+            output_text=payload.output_text,
+        )
+
+
+@app.delete("/api/history/{kind}/{record_id}")
+def history_delete(kind: str, record_id: str):
+    """Permanently delete one history record from any section.
+
+    The row is removed only; drafts, asset originals and ComfyUI output images
+    on disk are never touched. There is no recycle bin.
+    """
+    if kind not in HISTORY_KINDS:
+        raise HTTPException(400, f"Unknown history kind: {kind}")
+
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        generation_history.ensure_schema(connection)
+        llm_history.ensure_schema(connection)
+        if kind == "prompt":
+            removed = generation_history.delete_by_prompt_id(
+                connection, record_id
+            )
+        elif kind == "vision":
+            try:
+                removed = llm_history.delete_vision(connection, int(record_id))
+            except ValueError:
+                raise HTTPException(400, "无效的记录编号") from None
+        else:
+            try:
+                removed = llm_history.delete_writing(connection, int(record_id))
+            except ValueError:
+                raise HTTPException(400, "无效的记录编号") from None
+
+    if not removed:
+        raise HTTPException(404, "历史记录不存在或已删除")
+    return {"removed": True}
 
 
 @app.get("/api/history")

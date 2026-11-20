@@ -1,7 +1,9 @@
-// Standalone vision panel: ask a local Ollama VL model to describe an uploaded
-// picture. Workbench only — there is no ComfyUI-node counterpart here. Images
-// and the description stay on this page; nothing is written to a workflow,
-// draft or history.
+// Standalone vision panel: ask a local Ollama VL model to describe a picture.
+// Workbench only — there is no ComfyUI-node counterpart here.
+//
+// Pictures may come from the asset library (referenced by asset_id, archived to
+// history together with the description) or be picked up as a temporary local
+// upload (kept on this page only, never written to history or stored on disk).
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "./api";
@@ -21,7 +23,10 @@ type VisionResponse = {
   image_count: number;
 };
 
-type VisionImage = {
+type AssetOption = { id: number; name: string; exists: boolean };
+
+type VisionPick = {
+  asset_id: number | null;
   name: string;
   dataUrl: string;
 };
@@ -53,6 +58,15 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 function isVisionModel(
   name: string,
   families: Record<string, string[]>,
@@ -72,12 +86,17 @@ export default function VisionPanel() {
   const [models, setModels] = useState<string[]>([]);
   const [modelDetails, setModelDetails] = useState<Record<string, string>>({});
   const [selectedModel, setSelectedModel] = useState("");
-  const [images, setImages] = useState<VisionImage[]>([]);
+  const [images, setImages] = useState<VisionPick[]>([]);
+  const [assets, setAssets] = useState<AssetOption[]>([]);
+  const [pickedAsset, setPickedAsset] = useState("");
   const [promptText, setPromptText] = useState(() =>
     readStoredParam("vision.prompt"),
   );
   const [busy, setBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [description, setDescription] = useState("");
+  const [lastModel, setLastModel] = useState("");
+  const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -103,7 +122,22 @@ export default function VisionPanel() {
         setMessage(`读取本地模型列表失败：${String(error)}`);
       }
     }
+
+    async function loadAssets() {
+      try {
+        const result = await apiGet<{ items: AssetOption[] }>(
+          "/api/assets/items",
+        );
+        setAssets(
+          (result.items || []).filter((item) => item.exists !== false),
+        );
+      } catch {
+        setAssets([]);
+      }
+    }
+
     void loadModels();
+    void loadAssets();
   }, []);
 
   async function addFiles(fileList: FileList | null) {
@@ -113,12 +147,45 @@ export default function VisionPanel() {
     const files = Array.from(fileList)
       .filter((file) => file.type.startsWith("image/"))
       .slice(0, slots);
-    const loaded: VisionImage[] = [];
+    const loaded: VisionPick[] = [];
     for (const file of files) {
       const dataUrl = await readFileAsDataUrl(file);
-      loaded.push({ name: file.name, dataUrl });
+      loaded.push({ asset_id: null, name: file.name, dataUrl });
     }
     setImages((prev) => [...prev, ...loaded].slice(0, MAX_IMAGES));
+  }
+
+  async function addAsset() {
+    const assetId = Number(pickedAsset);
+    if (!Number.isFinite(assetId)) return;
+    const option = assets.find((item) => item.id === assetId);
+    if (!option) return;
+    if (images.some((image) => image.asset_id === assetId)) {
+      setMessage("这张素材已经在待识别列表中。");
+      return;
+    }
+    if (images.length >= MAX_IMAGES) {
+      setMessage(`最多选择 ${MAX_IMAGES} 张图片。`);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/assets/image?asset_id=${assetId}`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error(`素材图片不可用（${response.status}）`);
+      const blob = await response.blob();
+      const dataUrl = await blobToDataUrl(blob);
+      setImages((prev) =>
+        [...prev, { asset_id: assetId, name: option.name, dataUrl }].slice(
+          0,
+          MAX_IMAGES,
+        ),
+      );
+      setPickedAsset("");
+      setMessage("");
+    } catch (error) {
+      setMessage(`读取素材图片失败：${String(error)}`);
+    }
   }
 
   function removeImage(index: number) {
@@ -129,6 +196,7 @@ export default function VisionPanel() {
     if (!selectedModel || images.length === 0) return;
     setBusy(true);
     setDescription("");
+    setSaved(false);
     try {
       const body: Record<string, unknown> = {
         model: selectedModel,
@@ -140,8 +208,9 @@ export default function VisionPanel() {
         body,
       );
       setDescription(result.description);
+      setLastModel(result.model);
       setMessage(
-        `已由 ${result.model} 识别 ${result.image_count} 张图片；结果只读，未写入工作副本或历史。`,
+        `已由 ${result.model} 识别 ${result.image_count} 张图片；结果只读，未写入工作副本。`,
       );
     } catch (error) {
       setMessage(`图片识别失败：${String(error)}`);
@@ -160,12 +229,37 @@ export default function VisionPanel() {
     }
   }
 
+  const assetPicks = images.filter((image) => image.asset_id !== null);
+  const canSave = Boolean(description) && assetPicks.length > 0;
+
+  async function saveHistory() {
+    if (!canSave || saveBusy) return;
+    setSaveBusy(true);
+    try {
+      await apiPost("/api/history/vision", {
+        model: lastModel || selectedModel,
+        prompt: promptText.trim() || null,
+        description,
+        assets: assetPicks.map((image) => ({
+          asset_id: image.asset_id as number,
+          name: image.name,
+        })),
+      });
+      setSaved(true);
+      setMessage("识别结果已存入历史（仅引用素材库图片，不保存副本）。");
+    } catch (error) {
+      setMessage(`存入历史失败：${String(error)}`);
+    } finally {
+      setSaveBusy(false);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="candidate-heading">
         <h3>图片识别（本地视觉模型）</h3>
         <p className="candidate-subtitle">
-          选择本地 VL 模型上传图片进行描述，图片与结果都只留在本机；不写入工作副本、草稿与历史。
+          选择本地 VL 模型识别图片；素材库图片可连同描述存入历史，本地上传的临时图只留在本页、不进历史。
         </p>
       </div>
 
@@ -201,8 +295,29 @@ export default function VisionPanel() {
                   );
                 })}
               </select>
+              <select
+                value={pickedAsset}
+                disabled={busy}
+                onChange={(event) => setPickedAsset(event.target.value)}
+                title="从素材库挑选图片"
+              >
+                <option value="">从素材库选图…</option>
+                {assets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !pickedAsset}
+                onClick={() => void addAsset()}
+              >
+                添加素材图
+              </button>
               <label className="vision-file-button">
-                选择图片（最多 {MAX_IMAGES} 张）
+                本地上传（临时）
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/gif"
@@ -232,7 +347,12 @@ export default function VisionPanel() {
                 {images.map((image, index) => (
                   <figure key={index}>
                     <img src={image.dataUrl} alt={image.name} />
-                    <figcaption>{image.name}</figcaption>
+                    <figcaption>
+                      {image.name}
+                      <small className="muted">
+                        {image.asset_id !== null ? "素材引用" : "临时图"}
+                      </small>
+                    </figcaption>
                     <div className="actions">
                       <button onClick={() => removeImage(index)} disabled={busy}>
                         移除
@@ -257,9 +377,31 @@ export default function VisionPanel() {
         <div className="candidate-list">
           <div className="candidate-list-head">
             <span>识别结果（只读）</span>
-            <button onClick={() => void copyDescription()}>复制</button>
+            <div className="actions">
+              {saved ? (
+                <small className="workflow-meta">已存入历史</small>
+              ) : (
+                <button
+                  onClick={() => void saveHistory()}
+                  disabled={!canSave || saveBusy}
+                  title={
+                    canSave
+                      ? "把这次识别结果连同素材引用存入历史"
+                      : "仅素材库图片可存入历史；本地上传的临时图不会归档"
+                  }
+                >
+                  {saveBusy ? "保存中…" : "存入历史"}
+                </button>
+              )}
+              <button onClick={() => void copyDescription()}>复制</button>
+            </div>
           </div>
           <textarea readOnly rows={8} value={description} />
+          {!canSave && (
+            <small className="muted">
+              本次含本地临时图，不会进入历史；改用素材库图片后可归档识别结果。
+            </small>
+          )}
         </div>
       )}
     </section>
