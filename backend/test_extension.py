@@ -17,21 +17,32 @@ def _load():
     return module
 
 
-def test_extension_registers_rule_query_node():
+def test_extension_registers_rule_context_node():
     ext = _load()
-    assert "WorkbenchRuleQuery" in ext.NODE_CLASS_MAPPINGS
-    assert ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchRuleQuery"] == "工作台规则查询"
+    assert "WorkbenchRuleContext" in ext.NODE_CLASS_MAPPINGS
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
+    assert cls.CATEGORY == "Workbench/Context"
+    assert cls.RETURN_TYPES == ("STRING", "STRING")
+    assert (
+        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchRuleContext"] == "工作台规则上下文"
+    )
     assert (EXT_DIR / ext.WEB_DIRECTORY).is_dir()
 
 
-def test_rule_query_node_shape():
+def test_rule_context_node_shape():
     ext = _load()
-    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleQuery"]
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
     types = cls.INPUT_TYPES()
-    assert set(types["required"]) == {"level", "scope_key", "backend_url"}
+    assert set(types["required"]) == {
+        "source",
+        "workflow_id",
+        "level",
+        "scope_key",
+        "backend_url",
+    }
+    assert types["required"]["source"][0] == ["workflow", "rules"]
     assert types["required"]["level"][0] == ["checkpoint", "architecture", "global"]
-    assert cls.RETURN_TYPES == ("STRING", "STRING")
-    assert cls.CATEGORY == "Workbench/Rules"
+    assert types["required"]["workflow_id"][0] == [""]
 
 
 def test_client_reports_error_without_backend(monkeypatch):
@@ -43,8 +54,8 @@ def test_client_reports_error_without_backend(monkeypatch):
     data = backend_client.list_rules("global")
     assert "error" in data
 
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleQuery"]()
-    text, raw = node.query_rules("global", "", "", "")
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
+    text, raw = node.load("rules", "", "global", "", "", "")
     assert "无法读取规则" in text
     assert raw == "{}"
 
@@ -194,30 +205,18 @@ def test_release_node_reports_error(monkeypatch):
     assert raw == "{}"
 
 
-# --- Workflow rule-context node -------------------------------------------
+# --- Merged rule-context node: workflow mode -----------------------------
 
 
-def test_extension_registers_context_node():
+def test_rule_context_workflow_requires_id():
     ext = _load()
-    assert "WorkbenchWorkflowContext" in ext.NODE_CLASS_MAPPINGS
-    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]
-    assert cls.CATEGORY == "Workbench/Context"
-    assert cls.RETURN_TYPES == ("STRING", "STRING")
-    assert (
-        ext.NODE_DISPLAY_NAME_MAPPINGS["WorkbenchWorkflowContext"]
-        == "工作台工作流规则上下文"
-    )
-
-
-def test_context_node_requires_workflow_id():
-    ext = _load()
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
-    text, raw = node.load_context("", "", "")
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
+    text, raw = node.load("workflow", "", "global", "", "", "")
     assert "workflow_id" in text
     assert raw == "{}"
 
 
-def test_context_node_renders_resolved_and_conflict(monkeypatch):
+def test_rule_context_workflow_renders_resolved_and_conflict(monkeypatch):
     ext = _load()
     import backend_client
 
@@ -237,8 +236,8 @@ def test_context_node_renders_resolved_and_conflict(monkeypatch):
         backend_client, "workflow_rule_prompt", lambda wid, base="", tok="": payload
     )
 
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
-    text, raw = node.load_context("wf-1", "", "")
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
+    text, raw = node.load("workflow", "wf-1", "global", "", "", "")
 
     assert "SD1.5" in text
     assert "base" in text
@@ -247,7 +246,7 @@ def test_context_node_renders_resolved_and_conflict(monkeypatch):
     assert '"step"' in raw
 
 
-def test_context_node_reports_backend_error(monkeypatch):
+def test_rule_context_workflow_reports_backend_error(monkeypatch):
     ext = _load()
     import backend_client
 
@@ -256,15 +255,42 @@ def test_context_node_reports_backend_error(monkeypatch):
         "workflow_rule_prompt",
         lambda wid, base="", tok="": {"error": "URLError: x"},
     )
-    node = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]()
-    text, raw = node.load_context("wf-1", "", "")
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
+    text, raw = node.load("workflow", "wf-1", "global", "", "", "")
     assert "无法读取规则上下文" in text
     assert raw == "{}"
 
 
-def test_context_node_workflow_id_is_combo_placeholder():
+def test_rule_context_rules_renders_items(monkeypatch):
     ext = _load()
-    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]
+    import backend_client
+
+    payload = {
+        "items": [
+            {
+                "rule_key": "cfg",
+                "value": "7",
+                "level": "global",
+                "scope_key": "-",
+                "note": "保守",
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        backend_client, "list_rules", lambda level, scope="", base="", tok="": payload
+    )
+
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]()
+    text, raw = node.load("rules", "", "global", "", "", "")
+
+    assert "cfg" in text
+    assert "7" in text
+    assert '"items"' in raw
+
+
+def test_rule_context_workflow_id_is_combo_placeholder():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchRuleContext"]
     # Seeded combo; the extension JS fills real options from the backend list.
     assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]
 

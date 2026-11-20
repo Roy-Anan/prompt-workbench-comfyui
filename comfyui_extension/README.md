@@ -13,10 +13,9 @@ comfyui_extension/
    ├─ __init__.py            # 注册 NODE_CLASS_MAPPINGS、WEB_DIRECTORY、代理路由
    ├─ backend_client.py      # 回环 HTTP 客户端（仅标准库，对接现有后端）
    ├─ proxy.py               # 本地只读代理：浏览器→ComfyUI 同源→后端（带节点令牌）
-   ├─ rules_node.py          # 规则只读查询节点
+   ├─ rule_context_node.py   # 规则上下文节点（按工作流取上下文 / 按层级查规则）
    ├─ release_node.py        # 卸载 LLM / 释放显存节点
-   ├─ context_node.py        # 工作流规则上下文只读节点
-   ├─ candidate_node.py       # 本地 LLM 提示词候选生成节点
+   ├─ candidate_node.py      # 本地 LLM 提示词候选生成节点
    └─ web/
       └─ workbench_panel.js  # 侧边栏页签 + 工作流动态下拉/画布内沿用选择器
 ```
@@ -46,9 +45,10 @@ comfyui_extension/
 
 **已真机验证**（秋叶整合包 ComfyUI v0.30.2，2026-11-20）：带参数启动后
 日志出现 `Adding extra search path custom_nodes ...\comfyui_extension`，
-四个工作台节点在 `/object_info` 注册成功（`WorkbenchRuleQuery`、
-`WorkbenchReleaseVram`、`WorkbenchWorkflowContext`、`WorkbenchPromptCandidate`，
-中文名正确）；面板 JS 由
+工作台节点在 `/object_info` 注册成功（现状三个：`WorkbenchRuleContext`、
+`WorkbenchReleaseVram`、`WorkbenchPromptCandidate`，中文名正确；早期的
+`WorkbenchRuleQuery` 与 `WorkbenchWorkflowContext` 两个只读节点已合并进
+`WorkbenchRuleContext`）；面板 JS 由
 `/extensions/workbench/workbench_panel.js` 正常下发。
 
 节点运行在整合包 Python 里，通过回环地址访问现有 FastAPI 后端
@@ -122,9 +122,10 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    回退，分区折叠展示工作流（id/标题/确认态）/规则/草稿/素材/LoRA/历史摘要，
    超出条数引导回工作台。节点侧 `backend_client.list_workflows()` 复用
    `GET /api/workflows` 提供只读清单，为后续下拉选择预留契约。
-4. **工作流上下文节点 + 候选生成节点**（已落地前置切片）：
-   `WorkbenchWorkflowContext` 按输入的 `workflow_id` 拉取后端已解析的规则
-   上下文（已解析字段/冲突/未覆盖/口径说明）；`WorkbenchPromptCandidate`
+4. **规则上下文节点 + 候选生成节点**（已落地前置切片）：
+   `WorkbenchRuleContext` 用 `source` 切换两种只读看法——`workflow` 按输入的
+   `workflow_id` 拉取后端已解析的规则上下文（已解析字段/冲突/未覆盖/口径说明），
+   `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate`
    同按 `workflow_id` 调后端五模式本地候选，规则、现有提示词、受保护术语
    均由后端按 id 取齐，候选只回画布、不写回草稿。
 5. **画布桥：工作流动态下拉**（已落地）：两个节点的 `workflow_id` 为 combo
@@ -143,5 +144,5 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
   `routes.get(path)` 装饰器/回调式；GET 路由已隐含允许 HEAD，不可再显式
   注册 HEAD，否则启动即 `RuntimeError: method HEAD is already registered`。
 - 2026-11-20 真机（ComfyUI v0.30.2）实测：白名单 200、
-  非白名单 403、POST 405；四个工作台节点在 object_info 注册、面板 JS 正常
+  非白名单 403、POST 405；工作台节点在 object_info 注册、面板 JS 正常
   下发、`workflows` 代理回传清单；启动日志无 Traceback。

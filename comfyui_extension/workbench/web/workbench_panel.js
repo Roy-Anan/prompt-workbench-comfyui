@@ -310,7 +310,7 @@ app.registerExtension({
 // locally so a freshly added node reuses it. Nodes never write back to the
 // backend; draft/rule editing stays in the workbench web app.
 
-const PICKER_NODE_TYPES = ["WorkbenchWorkflowContext", "WorkbenchPromptCandidate"];
+const PICKER_NODE_TYPES = ["WorkbenchRuleContext", "WorkbenchPromptCandidate"];
 const PICKER_STORAGE_KEY = "workbench.lastWorkflowId";
 
 let cachedWorkflowItems = null;

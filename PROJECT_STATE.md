@@ -4392,6 +4392,56 @@
 - 已知遗留：`suyuexifull` 权重头里的单数 `trigger_word` 字段后端未提取（TRIGGER_KEYS 仅复数形式）。
 - 真机验收（隐藏后清单/分组、开关恢复、按钮回写）待在重启后的运行实例点开核验。
 
+## 169. 扩展节点合并：两个只读节点并入规则上下文；补通俗节点说明书（2026-11-20）
+
+### 169.1 背景与口径
+
+自建扩展原四个节点中，`WorkbenchRuleQuery`（按层级查规则）与
+`WorkbenchWorkflowContext`（按工作流取规则上下文）都是只读、都出 `文本 + raw_json`，
+职责相近；而 `WorkbenchReleaseVram`（出图前动作闸门）与
+`WorkbenchPromptCandidate`（LLM 重计算）时机和参数独立，不合并。
+按"只读两件合并、动作两件保留"的口径落地；后端接口契约不变。
+
+### 169.2 落地内容
+
+1. **合并节点 `WorkbenchRuleContext`**（`comfyui_extension/workbench/rule_context_node.py`）
+   - `source` combo 切换：`workflow`（按 `workflow_id` 取已解析规则上下文，沿用原
+     上下文渲染：已解析/冲突/未覆盖/口径）；`rules`（按 `level` + `scope_key` 浏览规则清单）。
+   - 输入：`source` / `workflow_id` / `level` / `scope_key` / `backend_url` / 可选 `token`；
+     输出 `context_text` + `raw_json`；CATEGORY `Workbench/Context`。
+   - 删除旧 `rules_node.py`、`context_node.py`；`__init__.py` 加载清单同步为
+     `rule_context_node.py` / `release_node.py` / `candidate_node.py`。
+   - 面板 `workbench_panel.js` 的 `PICKER_NODE_TYPES` 由旧上下文节点名改为
+     `WorkbenchRuleContext`（候选节点下拉绑定不变）。
+
+2. **测试改写**（`backend/test_extension.py`）
+   - 移除旧 `WorkbenchRuleQuery` / `WorkbenchWorkflowContext` 注册与行为用例；
+     新增合并节点形状、workflow 模式缺 id / 渲染已解析与冲突 / 后端错误、
+     rules 模式渲染规则条目、`workflow_id` 占位 combo 等用例。
+   - release / candidate / backend_client 既有用例保留不动。
+
+3. **通俗节点说明书**
+   - 新增 `comfyui_extension/NODES_GUIDE.md`：大白话讲清三个节点 + 侧边栏面板的
+     作用、使用时机、输入输出、典型连线与常见问题（后端未开、节点不写回草稿、旧节点名变更）。
+   - `comfyui_extension/README.md` 目录树、节点清单、落地顺序第 4 步、实测口径同步为
+     现状三节点，并注明旧两个只读节点已合并。
+
+### 169.3 回归
+
+- 定向 `test_extension.py` **25 passed**。
+- 全量后端 **428 passed, 2 failed**，两个失败仍是记录在案的环境型（stopper 残留运行记录、
+  sidebar 读到本机真实非零计数）；本轮未改 `scripts/` 与前端 Vite 产物。
+- 扩展包 import 自测：注册 `WorkbenchPromptCandidate` / `WorkbenchReleaseVram` /
+  `WorkbenchRuleContext`，旧 `WorkbenchRuleQuery` / `WorkbenchWorkflowContext` 已不在注册表。
+
+### 169.4 边界与 backlog
+
+- 旧画布若保存过旧两个节点名，重新加载会显示缺失节点；删掉后拖新的
+  `WorkbenchRuleContext` 即可，历史工作流不做自动迁移。
+- 释放显存、候选生成未并入；若后续要"一条龙"，优先用 ComfyUI 子图/组节点包裹，
+  而不是把动作节点写进同一节点定义。
+- 真机在 ComfyUI 带扩展参数启动后，核对新节点注册与 `workflow_id` 下拉填充待验收。
+
 
 
 

@@ -33,9 +33,8 @@ def _load(module_name: str, file_name: str) -> None:
         NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
 
 
-_load("workbench_rules_node", "rules_node.py")
+_load("workbench_rule_context_node", "rule_context_node.py")
 _load("workbench_release_node", "release_node.py")
-_load("workbench_context_node", "context_node.py")
 _load("workbench_candidate_node", "candidate_node.py")
 
 # Register the local read-only proxy routes (no-op when the ComfyUI server
