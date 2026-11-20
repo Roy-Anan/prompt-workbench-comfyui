@@ -31,7 +31,14 @@ ComfyUI 启动时额外加载本目录的路径配置：
 
 节点运行在整合包 Python 里，通过回环地址访问现有 FastAPI 后端
 （默认 `http://127.0.0.1:17890`，可用 `WORKBENCH_API_URL` 覆盖）。
-鉴权走本地 Bearer 令牌（`WORKBENCH_SESSION_TOKEN`），与现有 CLI/脚本口径一致。
+
+### 节点凭据（只读）
+
+ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首次启动时
+在数据根持久化一个节点专用只读令牌 `settings/node_token.json`（不入库）。
+客户端按以下顺序取凭据：节点输入框 > 环境变量 `WORKBENCH_SESSION_TOKEN`
+> 凭据文件。该令牌只放行 GET/HEAD/OPTIONS，任何写请求由后端拒绝 403；
+文件位置可用 `WORKBENCH_NODE_TOKEN_FILE` 或 `WORKBENCH_DATA_ROOT` 覆盖。
 
 ## 查重结论：复用现成插件 vs 自建
 
@@ -53,8 +60,8 @@ ComfyUI 启动时额外加载本目录的路径配置：
 
 ## 落地顺序
 
-1. **骨架 + 最简节点**（当前）：规则查询节点，验证外部目录能被 ComfyUI
-   识别加载。
+1. **骨架 + 最简节点**（已落地）：规则查询节点，验证外部目录能被 ComfyUI
+   识别加载；配套节点专用只读令牌机制（凭据文件 + 后端只读放行）。
 2. 生图前卸载 LLM 节点，复用现有后端卸载链路。
 3. LLM 候选节点，对接现有五模式与规则联动。
 4. 侧边栏面板：草稿箱、素材库、LoRA 资料、规则编辑，对接后端数据库。

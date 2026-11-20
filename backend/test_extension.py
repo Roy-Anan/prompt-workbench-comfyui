@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -46,3 +47,61 @@ def test_client_reports_error_without_backend(monkeypatch):
     text, raw = node.query_rules("global", "", "", "")
     assert "无法读取规则" in text
     assert raw == "{}"
+
+
+def _write_token_file(path: Path, token: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"token": token}), encoding="utf-8")
+
+
+def test_client_reads_persisted_node_token(monkeypatch, tmp_path):
+    import backend_client
+
+    token_file = tmp_path / "node_token.json"
+    _write_token_file(token_file, "file-node-token")
+    monkeypatch.setattr(backend_client, "_default_token_file", lambda: token_file)
+    monkeypatch.delenv("WORKBENCH_SESSION_TOKEN", raising=False)
+
+    assert backend_client._token() == "file-node-token"
+
+
+def test_client_explicit_token_overrides_file(monkeypatch, tmp_path):
+    import backend_client
+
+    token_file = tmp_path / "node_token.json"
+    _write_token_file(token_file, "file-node-token")
+    monkeypatch.setattr(backend_client, "_default_token_file", lambda: token_file)
+
+    assert backend_client._token("explicit-token") == "explicit-token"
+
+
+def test_client_env_token_overrides_file(monkeypatch, tmp_path):
+    import backend_client
+
+    token_file = tmp_path / "node_token.json"
+    _write_token_file(token_file, "file-node-token")
+    monkeypatch.setattr(backend_client, "_default_token_file", lambda: token_file)
+    monkeypatch.setenv("WORKBENCH_SESSION_TOKEN", "env-token")
+
+    assert backend_client._token() == "env-token"
+
+
+def test_client_missing_token_file_fails_open(monkeypatch, tmp_path):
+    import backend_client
+
+    monkeypatch.setattr(
+        backend_client, "_default_token_file", lambda: tmp_path / "nope.json"
+    )
+    monkeypatch.delenv("WORKBENCH_SESSION_TOKEN", raising=False)
+
+    assert backend_client._token() == ""
+
+
+def test_client_default_token_file_points_at_repo_userdata(monkeypatch):
+    import backend_client
+
+    monkeypatch.delenv("WORKBENCH_NODE_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("WORKBENCH_DATA_ROOT", raising=False)
+
+    expected = REPO_ROOT / "userdata" / "settings" / "node_token.json"
+    assert backend_client._default_token_file() == expected

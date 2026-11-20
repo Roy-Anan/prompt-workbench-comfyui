@@ -90,6 +90,13 @@ ALLOWED_ORIGINS = {
 # generated at bootstrap and held only in process memory.
 SESSION_TICKETS: set[str] = set()
 
+# Read-only credential for local ComfyUI extension nodes. Nodes run in the
+# integrated Python process and cannot see the launcher's in-memory bootstrap
+# token, so a separate token is persisted under the data root and loaded once
+# at startup. The backend rejects state-changing requests that present it.
+NODE_TOKEN = ""
+_node_token_loaded = False
+
 CSRF_HEADER = "X-Workbench-CSRF"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
@@ -200,6 +207,14 @@ def backup_corrupt_settings() -> Path:
     )
     shutil.copy2(SETTINGS_FILE, backup)
     return backup
+
+
+def _ensure_node_token() -> None:
+    """Load (creating on first use) the persisted extension node token."""
+    global NODE_TOKEN, _node_token_loaded
+    if not _node_token_loaded:
+        NODE_TOKEN = datadir.load_or_create_node_token(DATA_ROOT)
+        _node_token_loaded = True
 
 
 def load_settings() -> dict[str, Any]:
@@ -357,6 +372,7 @@ class QueueGlobalPause(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    _ensure_node_token()
     queue_dispatcher.start()
     try:
         yield
@@ -411,6 +427,12 @@ def _authorized(request: Request) -> tuple[bool, str]:
     if BOOTSTRAP_TOKEN and hmac.compare_digest(supplied, expected):
         return True, "bearer"
 
+    # 3) Read-only node token (ComfyUI extension nodes on the same machine).
+    if NODE_TOKEN:
+        expected_node = f"Bearer {NODE_TOKEN}"
+        if hmac.compare_digest(supplied, expected_node):
+            return True, "node"
+
     return False, ""
 
 
@@ -446,6 +468,14 @@ async def require_session(request: Request, call_next):
             )
     else:
         authorized, session_kind = _authorized(request)
+
+    # The node token is read-only: reject state-changing requests even when
+    # the token itself is valid.
+    if session_kind == "node" and request.method not in SAFE_METHODS:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Node token is read-only"},
+        )
 
     # CSRF protection for browser cookie sessions on state-changing requests.
     # The Bearer bootstrap token is a non-browser caller and does not carry

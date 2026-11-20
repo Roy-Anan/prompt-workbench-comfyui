@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import sqlite3
 from datetime import datetime, timezone
@@ -61,6 +62,7 @@ OPTIONAL_EXTERNAL_KEYS = ("checkpoint", "lora", "clip", "vae", "output")
 
 SETTINGS_REL = Path("settings") / "settings.json"
 DATABASE_REL = Path("database") / "workbench.sqlite3"
+NODE_TOKEN_REL = Path("settings") / "node_token.json"
 
 
 def repo_root() -> Path:
@@ -98,6 +100,51 @@ def settings_path(root: Path) -> Path:
 
 def database_path(root: Path) -> Path:
     return root / DATABASE_REL
+
+
+def node_token_path(root: Path) -> Path:
+    """Persistence location for the local ComfyUI-extension node token."""
+    return root / NODE_TOKEN_REL
+
+
+def load_or_create_node_token(root: Path) -> str:
+    """Read the persisted extension node token, generating it on first use.
+
+    ComfyUI custom nodes run in the integrated Python process and cannot see
+    the launcher's in-memory bootstrap token. This shared-machine token is
+    persisted under the data root (never committed) and reused across restarts
+    so a running ComfyUI keeps working after the workbench restarts. It is a
+    read-only credential: the backend rejects state-changing requests that
+    present it.
+    """
+    path = node_token_path(root)
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            token = data.get("token")
+            if isinstance(token, str) and token.strip():
+                return token.strip()
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass  # corrupt/partial file -> regenerate below.
+
+    token = secrets.token_urlsafe(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "token": token,
+        "issued_at": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = path.with_name(
+        f"{path.name}.{datetime.now(timezone.utc).strftime('%H%M%S%f')}.tmp"
+    )
+    try:
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return token
 
 
 def _has_real_data(path: Path) -> bool:

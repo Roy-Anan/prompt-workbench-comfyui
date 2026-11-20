@@ -4,9 +4,11 @@ Runs inside the ComfyUI integrated Python and talks to the workbench FastAPI
 backend over 127.0.0.1. Only the standard library is used so the extension
 loads before any third-party requirement is installed.
 
-Authentication: the backend accepts a local Bearer bootstrap token
-(``WORKBENCH_SESSION_TOKEN``). The token can be passed per node or supplied
-through the environment; the health probe is unauthenticated by design.
+Authentication: ComfyUI nodes cannot see the launcher's in-memory bootstrap
+token, so the backend persists a separate read-only node token under the data
+root (``userdata/settings/node_token.json``). This client reads that file by
+default; an explicit node input or the ``WORKBENCH_SESSION_TOKEN`` environment
+variable overrides it. The health probe is unauthenticated by design.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "http://127.0.0.1:17890"
@@ -27,8 +30,47 @@ def _base_url(override: str = "") -> str:
     return base.strip("/")
 
 
+def _default_token_file() -> Path | None:
+    """Locate the persisted node token file, honoring data-root overrides."""
+    env_file = os.environ.get("WORKBENCH_NODE_TOKEN_FILE", "").strip()
+    if env_file:
+        return Path(env_file)
+
+    env_root = os.environ.get("WORKBENCH_DATA_ROOT", "").strip()
+    if env_root:
+        return Path(env_root) / "settings" / "node_token.json"
+
+    # Package file: <repo>/comfyui_extension/workbench/backend_client.py,
+    # so the repo root is two parents up (workbench -> comfyui_extension -> repo).
+    pkg = Path(__file__).resolve().parent
+    return pkg.parent.parent / "userdata" / "settings" / "node_token.json"
+
+
+def _read_node_token_file() -> str:
+    """Read the persisted read-only node token; empty on any failure.
+
+    A missing or corrupt file must not crash the canvas -- the node simply
+    reports that the backend session could not be read.
+    """
+    try:
+        path = _default_token_file()
+        if path and path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            token = data.get("token", "")
+            if isinstance(token, str):
+                return token.strip()
+    except Exception:
+        return ""
+    return ""
+
+
 def _token(override: str = "") -> str:
-    return (override or os.environ.get("WORKBENCH_SESSION_TOKEN", "")).strip()
+    if override.strip():
+        return override.strip()
+    env = os.environ.get("WORKBENCH_SESSION_TOKEN", "").strip()
+    if env:
+        return env
+    return _read_node_token_file()
 
 
 def _get(

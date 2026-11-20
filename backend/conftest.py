@@ -31,6 +31,8 @@ def client(tmp_path, monkeypatch):
     main.SETTINGS_FILE = datadir.settings_path(main.DATA_ROOT)
     main.MIGRATION_REPORT = {}
     main.SESSION_TICKETS.clear()
+    main.NODE_TOKEN = ""
+    main._node_token_loaded = False
 
     with TestClient(main.app) as test_client:
         yield test_client, main
