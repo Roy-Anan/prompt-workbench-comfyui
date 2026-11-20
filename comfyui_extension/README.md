@@ -78,6 +78,32 @@ ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首�
 | 工作流解析、Prompt 白名单确认、写回画布（画布桥） | 无 | **自建**（路线一后期阶段） |
 | 设置/诊断/备份导出 | 无 | 后端保留，面板只读 |
 
+## 建议安装的现成节点（复用侧）
+
+工作台自建部分（候选生成、规则引擎、草稿箱、素材库、工作流解析）不依赖
+下列通用插件；下表是查重后建议从生态复用的成熟节点，按优先级排列。本机
+已装 ComfyUI-Manager，可在 Manager → Custom Nodes Manager 搜仓库名安装，
+装完重启 ComfyUI。
+
+| 优先级 | 插件 | 仓库 | 用途 | 备注 |
+| --- | --- | --- | --- | --- |
+| 高 | ComfyUI-Lora-Auto-Trigger-Words | `idrirap/ComfyUI-Lora-Auto-Trigger-Words` | 自动拉取 LoRA 触发词（Civitai API + safetensors 元数据），支持堆叠 LoRA | 查重首选复用；LoRA 手动资料、身份归并、触发词共享、组合冲突裁决仍走工作台后端 |
+| 高 | ComfyUI-Unload-Model | `SeanScripts/ComfyUI-Unload-Model` | 卸载 ComfyUI 自身模型 / 全部模型释放显存 | 纯 Python/Torch 无额外依赖；只管 ComfyUI 模型，外部 Ollama 卸载仍用工作台自建节点 |
+| 中 | ComfyUI-Lora-Manager | `willmiao/ComfyUI-Lora-Manager` | LoRA 可视化网格、预览缩略图、触发词、可收藏组合（recipes） | 带 Python 依赖；LoRA 数量多时再装 |
+| 可选 | LoRa Loader with TriggerDB | `benstaniford/comfy-lora-loader-with-triggerdb` | 本地 JSON 持久化每个 LoRA 的触发词 | 配合提示词合并节点使用 |
+| 可选 | FindingLora | `shootthesound/comfyui-lora-FindingLora` | LoRA 书签 + 模糊搜索 + 触发词一键复制 | LoRA 下拉列表很长时有用 |
+
+**不建议安装**（已被内置能力或工作台自建覆盖）：
+
+- 通用 Ollama / LLM 对话与增强节点（comfydv、Local LLM Prompt Enhancer、
+  NeonLlama、Ollama Prompt Planner 等）：候选生成走工作台后端五模式 + 规则
+  联动 + 受保护片段/术语 + 候选清洗，不接通用对话节点。
+- 通用提示词收藏/管理插件（PromptManager、Prompt-Assistant 等）：草稿箱
+  由工作台后端自建（多命名、版本快照、收藏置顶、标签、写入校验）。
+- 成品图画廊插件（SmartGallery DAM、PixlStash、smart-comfyui-gallery 等）：
+  内置 History + 工作台素材库已覆盖；确有多图集中管理需求再评估。
+- 模型动态卸载：ComfyUI 内置 Dynamic VRAM / lowvram 已具备。
+
 ## 落地顺序
 
 1. **骨架 + 最简节点**（已落地）：规则查询节点，验证外部目录能被 ComfyUI

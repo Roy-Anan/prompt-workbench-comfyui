@@ -3822,5 +3822,6 @@
 - **真机验收（2026-11-20，秋叶整合包 ComfyUI v0.30.2）**：带扩展参数启动后，日志出现 `Adding extra search path custom_nodes ...\comfyui_extension`；`/object_info` 中 `WorkbenchRuleQuery`、`WorkbenchReleaseVram` 注册成功且中文名正确；面板 JS 由 `/extensions/workbench/workbench_panel.js` 正常下发（HTTP 200，含 `registerSidebarTab`）。验收后已停止该 ComfyUI 进程，8188 释放，显存回落至约 39MiB。
 - **仍未目视**：侧边栏页签在 ComfyUI GUI 内的实际渲染与交互（未开浏览器截图）；节点与 JS 下发链路已验证。
 - backlog：LLM 候选节点依赖后端工作流上下文（workflow_id 规则/提示词/术语），与画布桥同属后期阶段；面板内只读规则/草稿列表需先打通浏览器只读会话。
+- 复用侧现成节点清单已落档 `comfyui_extension/README.md`：高优先 Lora-Auto-Trigger-Words、Unload-Model；中/可选 Lora-Manager、TriggerDB、FindingLora；通用 LLM 对话节点、提示词收藏插件、成品画廊不装（自建或内置已覆盖）。本机 custom_nodes 经核对未装同类插件。
 
 
