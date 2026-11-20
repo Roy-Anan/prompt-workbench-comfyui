@@ -335,3 +335,21 @@ def test_annotate_exists_none_without_output_dir():
 def test_annotate_exists_rejects_path_escape(tmp_path):
     images = [{"filename": "../escape.png", "subfolder": "", "exists": None}]
     assert generation_history.annotate_exists(images, str(tmp_path))[0]["exists"] is False
+
+
+def test_history_image_route_not_captured_by_prompt_id(client, tmp_path, monkeypatch):
+    """The static image route must win over ``/api/history/{prompt_id}``.
+
+    If registered after the dynamic route, ``image`` is captured as a prompt_id
+    and the image endpoint returns 404 even when the file exists on disk.
+    """
+    test_client, main = client
+    (tmp_path / "a.png").write_bytes(b"fake-png-bytes")
+    monkeypatch.setattr(
+        main, "load_settings", lambda: {"storage": {"output": str(tmp_path)}}
+    )
+
+    resp = test_client.get("/api/history/image?filename=a.png", headers=AUTH)
+
+    assert resp.status_code == 200
+    assert resp.content == b"fake-png-bytes"

@@ -262,6 +262,13 @@ def test_context_node_reports_backend_error(monkeypatch):
     assert raw == "{}"
 
 
+def test_context_node_workflow_id_is_combo_placeholder():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchWorkflowContext"]
+    # Seeded combo; the extension JS fills real options from the backend list.
+    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]
+
+
 # --- Prompt candidate node -------------------------------------------------
 
 
@@ -356,3 +363,9 @@ def test_candidate_node_reports_backend_error(monkeypatch):
     text, raw = node.generate("wf-1", "m", "draft", "任务", "", "")
     assert "队列有待执行任务" in text
     assert "409" in raw
+
+
+def test_candidate_node_workflow_id_is_combo_placeholder():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
+    assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]

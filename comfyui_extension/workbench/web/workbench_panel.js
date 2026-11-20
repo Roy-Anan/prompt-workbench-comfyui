@@ -300,3 +300,94 @@ app.registerExtension({
     register();
   },
 });
+
+// --- Workflow picker: dynamic workflow options on workbench nodes ----------
+//
+// The Python nodes seed their ``workflow_id`` combo with an empty placeholder
+// because instance-time Python cannot fetch the backend list. This side script
+// reads the imported workflows through the same read-only proxy and fills the
+// combo options once the canvas loads. The last chosen workflow is remembered
+// locally so a freshly added node reuses it. Nodes never write back to the
+// backend; draft/rule editing stays in the workbench web app.
+
+const PICKER_NODE_TYPES = ["WorkbenchWorkflowContext", "WorkbenchPromptCandidate"];
+const PICKER_STORAGE_KEY = "workbench.lastWorkflowId";
+
+let cachedWorkflowItems = null;
+
+async function fetchPickerWorkflows() {
+  if (cachedWorkflowItems !== null) return cachedWorkflowItems;
+  try {
+    const resp = await fetch(`${PROXY_BASE}/workflows`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    cachedWorkflowItems = Array.isArray(data.items) ? data.items : [];
+  } catch (err) {
+    console.warn("[workbench-picker] workflow list unavailable:", err);
+    cachedWorkflowItems = [];
+  }
+  return cachedWorkflowItems;
+}
+
+function workflowOptionLabel(item) {
+  const id = item.id || "";
+  const short = String(id).slice(0, 8);
+  const name = item.filename || short;
+  const confirmed = item.confirmed ? " · 已确认" : "";
+  return `${name} (${short})${confirmed}`;
+}
+
+function applyWorkflowOptions(widget, items) {
+  if (!widget) return;
+  // ComfyUI combo options accept ``[display, value]`` pairs: the dropdown shows
+  // the readable label while the node still receives the stable workflow id.
+  const options = items.length
+    ? items.map((item) => [workflowOptionLabel(item), item.id])
+    : [""];
+  if (Array.isArray(widget.options)) {
+    widget.options = options;
+  } else if (widget.options && typeof widget.options === "object") {
+    widget.options.values = options;
+  }
+}
+
+function siblingWorkflowId(node) {
+  const nodes = (node.graph && node.graph._nodes) || [];
+  for (const other of nodes) {
+    if (other === node) continue;
+    const widget = (other.widgets || []).find((w) => w.name === "workflow_id");
+    if (widget && widget.value) return String(widget.value);
+  }
+  return "";
+}
+
+function bindPickerNode(node) {
+  const widget = (node.widgets || []).find((w) => w.name === "workflow_id");
+  if (!widget) return;
+
+  void fetchPickerWorkflows().then((items) => {
+    applyWorkflowOptions(widget, items);
+    if (!widget.value) {
+      // Reuse a workflow already bound on this canvas first, then fall back to
+      // the last choice remembered in this browser.
+      const inherited = siblingWorkflowId(node) || localStorage.getItem(PICKER_STORAGE_KEY);
+      if (inherited) widget.value = inherited;
+    }
+  });
+
+  const originalOnChange = widget.onChange;
+  widget.onChange = function () {
+    if (widget.value) localStorage.setItem(PICKER_STORAGE_KEY, String(widget.value));
+    if (typeof originalOnChange === "function") originalOnChange.call(this);
+  };
+}
+
+app.registerExtension({
+  name: "WorkbenchWorkflowPicker",
+  nodeCreated(node) {
+    if (PICKER_NODE_TYPES.includes(node.type)) bindPickerNode(node);
+  },
+});

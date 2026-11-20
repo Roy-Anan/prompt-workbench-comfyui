@@ -4022,6 +4022,62 @@
 - 出图闭环（提交 ComfyUI 队列、底模加载、成图回写历史）本轮未跑；候选链路
   已真机打通，出图链路待有真实出图需求时再验。
 
+## 163. 画布桥动态下拉落地 + 出图闭环真机跑通（2026-11-20）
+
+### 163.1 画布桥：工作流动态下拉与画布内沿用
+
+- `WorkbenchWorkflowContext`、`WorkbenchPromptCandidate` 的 `workflow_id` 输入
+  由自由文本改为 **combo 占位**（`[""]`），实例期 Python 不异步拉清单；
+  选项由扩展前端在画布加载后填充。
+- `web/workbench_panel.js` 新增 `WorkbenchWorkflowPicker` 扩展：
+  - 经同源只读代理 `/workbench-api/workflows` 拉已导入工作流清单，填进节点
+    `workflow_id` 的 combo；选项用 `[可读标签, id]` 二元组，节点仍拿到稳定 id。
+  - 新建节点优先沿用**同画布**已绑定的工作台节点所选工作流，其次回退浏览器
+    localStorage 记忆的最近选择；选择变化时写回记忆。
+- **边界（仍后置）**：完整的 graph↔workflow 指纹自动匹配未做——画布编辑器
+  graph 与后端导入的 API 工作流结构不同，本轮只做下拉选择 + 画布内沿用 +
+  记忆，不臆造不可靠的自动指纹绑定。节点不回写后端：草稿/规则/素材管理仍
+  留 Web 主阵地，ComfyUI 侧只放轻量节点与只读看板（既定产品共识）。
+
+### 163.2 出图闭环真机全流程跑通（通过）
+
+- 选定已确认 API 工作流 `36e013df…`（底模 `intorealismUltra_v80`、LoRA
+  `suyuexifull_c1-st6000`、704×1024、35 步）。
+- 链路：候选（`qwen2.5:3b` / draft，200）→ 拆分正向段写入工作流（负向保留
+  原值不动）→ 提交 ComfyUI 队列 → `running` → **`succeeded`**。
+- 成图 `pony_sdxl_00003_.png`（约 1.08 MB）；整链路约 29 秒，采样 35 步约
+  16 秒；8GB 显存未 OOM，出图后空闲显存回到约 6.94 GB；Ollama `/api/ps` 无
+  驻留模型。
+- 历史回写核对：新记录含正/负向提示词与底模 + LoRA 快照；草稿仍为既有两条
+  （苏悦希、suyeuxi），候选未落草稿、未改规则。
+- 观察：3B 候选仍夹带无意义标签（模型能力限制，非后端缺陷）；提示词专用
+  `comfyui-prompt:v1` 对比仍留待后续。
+
+### 163.3 修复：历史图片端点被动态路由抢占 404
+
+- 缺陷：`GET /api/history/image` 静态路由注册在 `/api/history/{prompt_id}`
+  动态路由之后，`image` 被当作 prompt_id 抢占匹配，图片 serving 恒返回 404
+  （磁盘文件存在、`exists` 标注为 true 也取不到）。
+- 修复：将 image 静态路由前移到动态路由之前；补回归测试
+  `test_history_image_route_not_captured_by_prompt_id`（存在文件应 200 回源，
+  被抢占则 404）。真机复测图片端点 **HTTP 200 / image/png / 1.08 MB**。
+
+### 163.4 回归与真机冒烟
+
+- 后端 **408 passed**（隔离 tmp 数据根；注意：本机 ComfyUI 在线时 sidebar
+  LoRA 目录探测会让 `test_empty_sections_report_zero_totals` 读到外部 LoRA
+  而失败，属环境依赖，离线跑即绿）。
+- 前端 `tsc -b && vite build` 绿（37 模块）；面板 JS `node --check` 语法通过。
+- 真机冒烟：四节点 object_info 注册、代理 `/workbench-api/workflows` 200、
+  非白名单 `/workbench-api/drafts` 403、面板脚本 200；启动日志无
+  Traceback / ImportError / ERROR。
+
+### 163.5 仍后置
+
+- 完整 graph↔workflow 指纹自动绑定；`.invalid` 校验态、深色令牌精调、独立
+  Toast、三档分辨率真机复核；历史挂账细项同 160.3 / 161.3。
+
+
 
 
 

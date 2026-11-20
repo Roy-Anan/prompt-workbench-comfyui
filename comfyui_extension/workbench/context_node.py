@@ -43,7 +43,10 @@ class WorkbenchWorkflowContext:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "workflow_id": ("STRING", {"default": "", "multiline": False}),
+                # Combo seeded with an empty placeholder; the extension JS
+                # fills the real workflow options from the backend list once the
+                # canvas loads. Free-text entry stays possible as a fallback.
+                "workflow_id": ([""], {"default": ""}),
                 "backend_url": ("STRING", {"default": ""}),
             },
             "optional": {
