@@ -25,7 +25,8 @@
 3.  docs/REQUIREMENTS_BASELINE.md
 4.  docs/ARCHITECTURE.md
 5.  docs/ROADMAP.md
-6.  与任务相关的 ADR、代码模块和测试
+6.  docs/CURRENT_STATE.md
+7.  与任务相关的 ADR、代码模块和测试
 
 阅读后先输出： - 当前项目阶段。 - 本次任务目标。 - 涉及的模块和文件。 -
 不会触碰的安全边界。 - 计划新增/修改的测试。 - 预期交付物。

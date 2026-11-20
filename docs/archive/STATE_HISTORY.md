@@ -1,3 +1,7 @@
+# STATE_HISTORY — PROJECT_STATE 历史流水账归档
+
+> **归档说明（2026-11-20）**：本文件由仓库根 `PROJECT_STATE.md` 整体复制归档，保留拆分前全部历史切片（第 1–172 节）与原始结论，**不重排、不更正**；节号与日期原样保留，便于与 `docs/TASK_EVIDENCE/` 回执互相追溯。现行有效状态见 `docs/CURRENT_STATE.md`，各模块落地与剩余方向以 `docs/ROADMAP.md` 为准。
+
 # PROJECT_STATE — 项目当前状态
 
 - 任务编号：TASK-003.1-R2（状态回填）

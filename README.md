@@ -51,6 +51,7 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
 -   [已确认需求基线](docs/REQUIREMENTS_BASELINE.md)
 -   [技术架构](docs/ARCHITECTURE.md)
 -   [开发路线图](docs/ROADMAP.md)
+-   [当前有效状态](docs/CURRENT_STATE.md)
 -   [维护与智能体交接手册](docs/MAINTENANCE_AND_AGENT_HANDOFF.md)
 -   [LLM 注入系统规范](docs/PROJECT_CONTROL/INJECTION_SYSTEM_SPEC.md)
 -   [三段可选注入与两类身份规范](docs/PROJECT_CONTROL/THREE_SLICE_SPEC.md)
