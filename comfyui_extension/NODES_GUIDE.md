@@ -87,12 +87,12 @@
 
 | 输入 | 填什么 |
 | --- | --- |
-| `workflow_id` | 目标工作流；下拉自动列出，也可手填 |
-| `model` | 本地 Ollama 模型名（比如 `comfyui-prompt:v1`） |
+| `workflow_id` | 目标工作流；下拉自动列出后端登记的工作流，也可手填编号 |
+| `model` | 本地 Ollama 模型；下拉自动列出本机已装模型（如 `comfyui-prompt:v1`），也可手填 |
 | `mode` | 创作模式：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `bilingual` 中英对照 / `negative` 负向补全 |
 | `task` | 这次想让它干什么（一句话要求，可留空） |
 | `backend_url` / `token` | 同前，一般留空 |
-| `prompt_profile` | 规则模板选择；`auto` 让后端按底模/架构自动匹配，也可手填 Profile 编号 |
+| `prompt_profile` | 规则模板下拉；首项 `auto（自动匹配）` 让后端按底模/架构自动匹配，其余为已登记的 Profile |
 | `temperature` / `top_p` / `num_ctx` | 采样参数；留默认（`-1`）表示不传给后端，用后端默认值 |
 
 ### 输出项

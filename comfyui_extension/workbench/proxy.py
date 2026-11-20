@@ -29,6 +29,8 @@ PROXY_ROUTES: dict[str, str] = {
     "overview": "/api/overview",
     "sidebar-summary": "/api/sidebar/summary",
     "workflows": "/api/workflows",
+    "ollama-models": "/api/ollama/models",
+    "profiles": "/api/prompt-profiles",
 }
 
 SAFE_METHODS = {"GET", "HEAD"}

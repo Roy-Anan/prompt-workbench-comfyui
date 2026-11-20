@@ -4442,6 +4442,32 @@
   而不是把动作节点写进同一节点定义。
 - 真机在 ComfyUI 带扩展参数启动后，核对新节点注册与 `workflow_id` 下拉填充待验收。
 
+## 170. 候选节点 model / prompt_profile 下拉化（2026-11-20）
+
+### 170.1 落地内容
+
+- 代理 `proxy.py` 白名单新增两条只读 GET 后缀：`ollama-models → /api/ollama/models`、
+  `profiles → /api/prompt-profiles`；node token 对 SAFE_METHODS 本就放行，后端鉴权未改。
+- 候选节点 `candidate_node.py`：`model`、`prompt_profile` 由 STRING 改为 COMBO 占位
+  （`model` 种子 `[""]`；`prompt_profile` 种子 `["auto"]`，默认值不变）；请求体组装逻辑不动。
+- 前端 `workbench_panel.js` picker 泛化：按 widget 名分三路拉取
+  workflows / ollama-models / profiles 填 combo（`[标签, 值]` 二元组），
+  Ollama 项附参数规模，Profile 首项 `auto（自动匹配）`、停用项标注；
+  三个字段各自 localStorage 记忆上次选择，优先沿用同画布已绑定值。
+- 文档：`NODES_GUIDE.md` 候选节点输入表、`README.md` 落地顺序与代理边界同步。
+
+### 170.2 回归
+
+- 定向 `test_extension.py` **27 passed**（新增 model combo 占位、profile combo 默认 auto 两例）。
+- 全量后端 **430 passed, 2 failed**，两个失败仍为记录在案的环境型用例，与本轮无关。
+- `node --check` 扩展面板 JS 语法通过。
+
+### 170.3 边界与 backlog
+
+- 代理新路由在 ComfyUI 重启后才注册生效；当前运行实例仍是旧代理，需重启 ComfyUI 后下拉才会拉到模型/Profile 清单。
+- `workflow_id` 保留下拉：画布 ComfyUI 工作流 ≠ 后端规则档案，节点按 id 取齐规则/现有提示词/受保护词，不能省略；graph↔workflow 指纹自动匹配仍后置。
+- combo 允许自由输入兜底，后端收到未登记的 model/profile 按既有容错处理。
+
 
 
 

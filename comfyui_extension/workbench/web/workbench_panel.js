@@ -301,92 +301,130 @@ app.registerExtension({
   },
 });
 
-// --- Workflow picker: dynamic workflow options on workbench nodes ----------
+// --- Node pickers: dynamic combo options on workbench nodes -----------------
 //
-// The Python nodes seed their ``workflow_id`` combo with an empty placeholder
-// because instance-time Python cannot fetch the backend list. This side script
-// reads the imported workflows through the same read-only proxy and fills the
-// combo options once the canvas loads. The last chosen workflow is remembered
-// locally so a freshly added node reuses it. Nodes never write back to the
-// backend; draft/rule editing stays in the workbench web app.
+// The Python nodes seed their combos with placeholder values because
+// instance-time Python cannot fetch the backend lists. This side script reads
+// the imported workflows, local Ollama models and Prompt Profiles through the
+// same read-only proxy and fills the combo options once the canvas loads. The
+// last choice for each field is remembered locally so a freshly added node
+// reuses it. Nodes never write back to the backend; draft/rule editing stays in
+// the workbench web app.
 
 const PICKER_NODE_TYPES = ["WorkbenchRuleContext", "WorkbenchPromptCandidate"];
-const PICKER_STORAGE_KEY = "workbench.lastWorkflowId";
 
-let cachedWorkflowItems = null;
+// widget name -> proxy suffix + localStorage key for the last chosen value.
+const PICKER_SOURCES = {
+  workflow_id: { endpoint: "workflows", storage: "workbench.lastWorkflowId" },
+  model: { endpoint: "ollama-models", storage: "workbench.lastOllamaModel" },
+  prompt_profile: { endpoint: "profiles", storage: "workbench.lastProfile" },
+};
 
-async function fetchPickerWorkflows() {
-  if (cachedWorkflowItems !== null) return cachedWorkflowItems;
+const pickerCache = {};
+
+async function fetchPickerList(suffix) {
+  if (suffix in pickerCache) return pickerCache[suffix];
   try {
-    const resp = await fetch(`${PROXY_BASE}/workflows`, {
+    const resp = await fetch(`${PROXY_BASE}/${suffix}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    cachedWorkflowItems = Array.isArray(data.items) ? data.items : [];
+    if (suffix === "ollama-models") {
+      // Ollama projection returns a bare string array plus a details map.
+      const details = data.model_details || {};
+      pickerCache[suffix] = (data.models || []).map((name) => ({
+        id: name,
+        detail: details[name] || "",
+      }));
+    } else {
+      pickerCache[suffix] = Array.isArray(data.items) ? data.items : [];
+    }
   } catch (err) {
-    console.warn("[workbench-picker] workflow list unavailable:", err);
-    cachedWorkflowItems = [];
+    console.warn(`[workbench-picker] ${suffix} list unavailable:`, err);
+    pickerCache[suffix] = [];
   }
-  return cachedWorkflowItems;
+  return pickerCache[suffix];
 }
 
-function workflowOptionLabel(item) {
+// Each option is a ``[display label, stable value]`` pair: the dropdown shows
+// the readable label while the node still receives the backend id / model name.
+function workflowOption(item) {
   const id = item.id || "";
   const short = String(id).slice(0, 8);
   const name = item.filename || short;
   const confirmed = item.confirmed ? " · 已确认" : "";
-  return `${name} (${short})${confirmed}`;
+  return [`${name} (${short})${confirmed}`, id];
 }
 
-function applyWorkflowOptions(widget, items) {
+function modelOption(item) {
+  const detail = item.detail ? ` · ${item.detail}` : "";
+  return [`${item.id}${detail}`, item.id];
+}
+
+function profileOption(item) {
+  const arch = item.architecture ? ` · ${item.architecture}` : "";
+  const off = item.enabled === false ? " · 已停用" : "";
+  const label = item.display_name || item.id;
+  return [`${label}${arch}${off}`, item.id];
+}
+
+function profileOptions(items) {
+  return [["auto（自动匹配）", "auto"], ...items.map(profileOption)];
+}
+
+function applyComboOptions(widget, options) {
   if (!widget) return;
-  // ComfyUI combo options accept ``[display, value]`` pairs: the dropdown shows
-  // the readable label while the node still receives the stable workflow id.
-  const options = items.length
-    ? items.map((item) => [workflowOptionLabel(item), item.id])
-    : [""];
+  const opts = options.length ? options : [["", ""]];
   if (Array.isArray(widget.options)) {
-    widget.options = options;
+    widget.options = opts;
   } else if (widget.options && typeof widget.options === "object") {
-    widget.options.values = options;
+    widget.options.values = opts;
   }
 }
 
-function siblingWorkflowId(node) {
+function siblingValue(node, name) {
   const nodes = (node.graph && node.graph._nodes) || [];
   for (const other of nodes) {
     if (other === node) continue;
-    const widget = (other.widgets || []).find((w) => w.name === "workflow_id");
+    const widget = (other.widgets || []).find((w) => w.name === name);
     if (widget && widget.value) return String(widget.value);
   }
   return "";
 }
 
+function optionsFor(widgetName, items) {
+  if (widgetName === "workflow_id") return items.map(workflowOption);
+  if (widgetName === "model") return items.map(modelOption);
+  return profileOptions(items);
+}
+
 function bindPickerNode(node) {
-  const widget = (node.widgets || []).find((w) => w.name === "workflow_id");
-  if (!widget) return;
+  for (const widget of node.widgets || []) {
+    const source = PICKER_SOURCES[widget.name];
+    if (!source) continue;
 
-  void fetchPickerWorkflows().then((items) => {
-    applyWorkflowOptions(widget, items);
-    if (!widget.value) {
-      // Reuse a workflow already bound on this canvas first, then fall back to
-      // the last choice remembered in this browser.
-      const inherited = siblingWorkflowId(node) || localStorage.getItem(PICKER_STORAGE_KEY);
-      if (inherited) widget.value = inherited;
-    }
-  });
+    void fetchPickerList(source.endpoint).then((items) => {
+      applyComboOptions(widget, optionsFor(widget.name, items));
+      if (!widget.value) {
+        // Reuse a value already bound on this canvas first, then fall back to
+        // the last choice remembered in this browser.
+        const inherited = siblingValue(node, widget.name) || localStorage.getItem(source.storage);
+        if (inherited) widget.value = inherited;
+      }
+    });
 
-  const originalOnChange = widget.onChange;
-  widget.onChange = function () {
-    if (widget.value) localStorage.setItem(PICKER_STORAGE_KEY, String(widget.value));
-    if (typeof originalOnChange === "function") originalOnChange.call(this);
-  };
+    const originalOnChange = widget.onChange;
+    widget.onChange = function () {
+      if (widget.value) localStorage.setItem(source.storage, String(widget.value));
+      if (typeof originalOnChange === "function") originalOnChange.call(this);
+    };
+  }
 }
 
 app.registerExtension({
-  name: "WorkbenchWorkflowPicker",
+  name: "WorkbenchNodePickers",
   nodeCreated(node) {
     if (PICKER_NODE_TYPES.includes(node.type)) bindPickerNode(node);
   },

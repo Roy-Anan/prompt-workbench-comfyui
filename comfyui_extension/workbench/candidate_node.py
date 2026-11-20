@@ -39,7 +39,10 @@ class WorkbenchPromptCandidate:
                 # fills the real workflow options from the backend list once the
                 # canvas loads. Free-text entry stays possible as a fallback.
                 "workflow_id": ([""], {"default": ""}),
-                "model": ("STRING", {"default": "", "multiline": False}),
+                # Combo seeded with an empty placeholder; the extension JS fills
+                # the local Ollama model names from the backend list once the
+                # canvas loads. Free-text entry stays possible as a fallback.
+                "model": ([""], {"default": ""}),
                 "mode": (MODES, {"default": "draft"}),
                 "task": ("STRING", {"default": "", "multiline": True}),
                 "backend_url": ("STRING", {"default": ""}),
@@ -47,8 +50,9 @@ class WorkbenchPromptCandidate:
             "optional": {
                 "token": ("STRING", {"default": ""}),
                 # "auto" lets the backend match a local Profile by checkpoint
-                # / architecture; otherwise enter a backend Profile id manually.
-                "prompt_profile": ("STRING", {"default": "auto", "multiline": False}),
+                # / architecture; otherwise pick a backend Profile id from the
+                # combo filled by the extension JS.
+                "prompt_profile": (["auto"], {"default": "auto"}),
                 "temperature": ("FLOAT", {"default": _UNSET, "min": -1.0, "max": 2.0, "step": 0.05}),
                 "top_p": ("FLOAT", {"default": _UNSET, "min": -1.0, "max": 1.0, "step": 0.05}),
                 "num_ctx": ("INT", {"default": -1, "min": -1, "max": 131_072}),

@@ -128,9 +128,11 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
    `rules` 按层级浏览规则清单；`WorkbenchPromptCandidate`
    同按 `workflow_id` 调后端五模式本地候选，规则、现有提示词、受保护术语
    均由后端按 id 取齐，候选只回画布、不写回草稿。
-5. **画布桥：工作流动态下拉**（已落地）：两个节点的 `workflow_id` 为 combo
-   占位，扩展前端经代理拉 `/api/workflows` 清单填充选项（`[标签, id]` 二元组）；
-   新建节点优先沿用同画布已绑定节点的选择，其次回退浏览器本地记忆。完整的
+5. **画布桥：动态下拉**（已落地）：节点的 `workflow_id`、候选节点的 `model`
+   （本地 Ollama 模型）与 `prompt_profile`（规则模板，首项 `auto`）均为 combo
+   占位，扩展前端经代理分别拉 `/api/workflows`、`/api/ollama/models`、
+   `/api/prompt-profiles` 清单填充选项（`[标签, 值]` 二元组）；新建节点优先
+   沿用同画布已绑定节点的选择，其次回退浏览器本地记忆。完整的
    graph↔workflow 指纹自动匹配仍后置（画布 graph 与后端 API 工作流结构不同，
    不臆造不可靠绑定）；节点不回写后端，草稿/规则/素材管理留 Web 主阵地。
 6. 后续：节点与画布节点双向读写的深化、当前工作流上下文全自动感知；再评估
@@ -138,7 +140,8 @@ LLM/释放显存，以及按工作流调用的 `POST /api/workflows/{id}/prompt/
 
 ### 代理边界与实测踩坑
 
-- 代理只转发 `health` / `overview` / `sidebar-summary` / `workflows` 四个只读后缀；
+- 代理只转发 `health` / `overview` / `sidebar-summary` / `workflows` /
+  `ollama-models` / `profiles` 只读后缀；
   其他后缀返回 403；非安全方法（POST 等）返回 405；后端不可达时 502 JSON。
 - 本机 aiohttp 的 `RouteTableDef` 没有 `add_route` 方法，注册必须用
   `routes.get(path)` 装饰器/回调式；GET 路由已隐含允许 HEAD，不可再显式

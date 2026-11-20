@@ -395,3 +395,18 @@ def test_candidate_node_workflow_id_is_combo_placeholder():
     ext = _load()
     cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
     assert cls.INPUT_TYPES()["required"]["workflow_id"][0] == [""]
+
+
+def test_candidate_node_model_is_combo_placeholder():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
+    # Seeded combo; the extension JS fills local Ollama model names.
+    assert cls.INPUT_TYPES()["required"]["model"][0] == [""]
+
+
+def test_candidate_node_profile_combo_defaults_auto():
+    ext = _load()
+    cls = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]
+    profile = cls.INPUT_TYPES()["optional"]["prompt_profile"]
+    assert profile[0] == ["auto"]
+    assert profile[1]["default"] == "auto"
