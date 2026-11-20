@@ -1,0 +1,63 @@
+# MODEL PROFILE — AutismMix SDXL AutismMix Pony
+
+[IDENTITY]
+Display Name: AutismMix SDXL AutismMix Pony
+Exact Checkpoint Filename: autismmixSDXL_autismmixPony.safetensors
+Version: Pony V6 + LoRA 合并
+Author / Model Card: civitai.tech/models/288584/autismmix-sdxl?modelVersionId=324619
+File Size: 6616.6 MB
+SHA256: 821AA5537F8DDAFDBF963827551865C31C5BBFAB1ABE7925CB5F006C8F71E485
+Identity Note: [镜像核实] 本地 SHA256 与版本镜像记录完全一致；作者说明本模型是 Pony V6 与 LoRA 的合并版本，更兼容为 Pony Diffusion 原始模型制作的风格。
+
+[ARCHITECTURE]
+Base Architecture: [镜像核实] Pony（Pony-based SDXL）
+Model Type: [作者页面确认] Checkpoint Merge（Pony V6 + LoRA 合并）
+VAE: 未给出
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: Pony 评分标签词汇；不要套用普通 SDXL 写实模板
+Author Positive Example: 作者标签片段（非完整通用正面词）：score_9, score_8_up, score_7_up, score_6_up, score_5_up, score_4_up, source_anime, BREAK
+Author Positive Example 2（作者评论补充写法）: score_9, score_8_up, score_7_up, source_anime, BREAK character name, series, natural language, danbooru/e621 tags
+Author Negative Example: 作者未提供固定完整范例；要更传统动漫风格可将 3d 加入负面提示词
+
+[GENERATION SETTINGS]
+Resolution: 未给出（社区参考 768×1192 / 832×1216，待核实）
+Sampler: 未给出（社区参考 Euler a / DPM++ 2M SDE Karras，待核实）
+Scheduler: 未给出
+Steps: 未给出（社区参考 25~28，待核实）
+CFG: 未给出（社区参考 7，待核实）
+Parameter Source: 身份/底座/类型/标签片段 [镜像核实]、[作者页面确认]；VAE/Clip Skip/采样参数 [待核实]
+Source Note: 括号内社区参考值待官方版本说明核对；作者建议使用 Pony 质量标签。
+
+[MODEL BEHAVIOR]
+Strengths: Pony 系动漫混合，标签贴合度较好；兼容 Pony 原始模型风格
+Known Weaknesses: 写实人像非其擅长；采样参数未经确认
+NSFW / Mature Content Statement: Pony 谱系普遍响应成熟向提示词；属谱系倾向，非具体输出保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial（身份经镜像哈希核实；采样参数未核实）
+Verified locally: no
+Uncertain fields: VAE、Clip Skip、触发词、官方采样器/调度器/步数/CFG/分辨率、完整负面范例
+Last Updated: 2026-11-07

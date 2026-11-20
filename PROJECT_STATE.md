@@ -4204,6 +4204,90 @@
   堆质量词的现象，由后端标签去重/清洗兜底；若后续格式漂移严重，可再复刻 v1 模式
   叠加助手规则层做定制标签，当前先按裸模型使用。
 
+## 166. 本地 Prompt Profile 三层规则体系落地（2026-11-20）
+
+### 166.1 范围与裁剪口径
+
+- 目标：在现有工作流规则层之上，落地 Core 通用提示词层 + 模型专用 Profile 层 +
+  工作流动态规则层三层组合；Auto/手动匹配 Profile，本地文件扫描/校验/热加载/版本
+  归档与回滚，并接入候选接口、ComfyUI 节点与前端下拉。
+- **本轮明确不做（人工后续补）**：模型权重 SHA256 计算模块、Civitai by-hash 等
+  远程信息搜集、AI 自动联网研究生成规则文件；模板与哈希由人工提供，得到文件后手动
+  放入 `prompt_profiles/` 目录。模块内哈希仅用于规则文件内容一致性校验。
+- 纯本地文件 I/O，无网络调用、不读模型权重；所有调用方相对路径经 `_safe_resolve`
+  限制在 Profile 根目录内，拒绝绝对路径 / `..` 越权 / 符号链接逃逸。
+
+### 166.2 落地内容
+
+- 目录 `prompt_profiles/`（env `WORKBENCH_PROFILE_ROOT` 可覆盖，便于测试）：
+  - `core/core_system_prompt.txt`：第一层通用核心规则（角色、意图忠实、中译英术语、
+    标签组织、反堆砌、谨慎不臆造、只输出候选），不绑定具体模型。
+  - `templates/`：`MODEL_RULE_TEMPLATE.txt`（14 章节规则模板）、
+    `MODEL_RESEARCH_TEMPLATE.md`（A/B/C 证据分级研究记录）、
+    `MODEL_PROFILE_AGENT_INSTRUCTIONS.md`（智能体研究/生成/校验/发布规范）。
+  - `models/<id>/rules.txt`、`staging/`、`archive/`、`manifest.json`。
+- 后端模块 `backend/prompt_profiles.py`：
+  - 扫描校验：manifest mtime/size 缓存热加载；致命错误（缺 id/非法/重复/路径越权/
+    规则文件不存在或空/content_hash 不一致/缺架构）记 errors 并阻断 Auto 资格；
+    章节缺失只记 `section_warnings`，不阻断（旧格式迁移 Profile 仍可参与匹配）。
+  - Auto 匹配链：手动非空非 `auto` 优先；停用/不存在回退并记警告；架构不兼容记
+    警告但仍注入。Auto 顺序 exact → pattern → alias → architecture；同分按 priority
+    降序再 id 稳定排序，不随机；无候选回退通用规则。
+  - 三层组合 `compose_system_prompt`：Core → Model → Workflow，分段标题
+    【第一层 · 通用核心规则】【第二层 · 模型专用规则】【第三层 · 工作流动态规则】。
+  - staging 发布（发布前归档当前线上版、版本号 patch 递增或取 meta 显式版本、成功后
+    清理 staging 副本）、停用/启用、版本列表、回滚（回滚前先归档当前线上版）、删除
+    （需 `confirm=true` 二次确认；Core 文件不可经此删除）。归档时间戳带微秒，避免
+    同秒重复发布覆盖归档目录。
+- 13 份 legacy 规则记录一次性迁移进 `models/` 并生成 manifest（`research_status=
+  legacy`）；章节缺口属旧格式遗留，待人工按模板补，不由本轮 AI 联网补齐。
+- API（`backend/main.py`，沿用现有会话/CSRF/节点令牌口径；GET 对节点令牌只读放行）：
+  `GET /api/prompt-profiles`、`GET /api/prompt-profiles/staging`、
+  `GET /api/prompt-profiles/{id}`、`POST .../staging/{id}/publish`、
+  `POST .../{id}/disable|enable`、`GET .../{id}/versions`、
+  `POST .../{id}/rollback/{stamp}`、`DELETE .../{id}`（confirm）。
+- 候选接口 `workflow_api.py`：请求新增可选 `prompt_profile`（默认 `auto`，旧请求
+  不带字段完全兼容）；响应补调试字段 `selected_profile_id/selected_profile_name/
+  profile_match_source/profile_version/profile_content_hash/checkpoint_name/
+  architecture/fallback_reason/profile_warning/system_prompt_layers`。
+- ComfyUI 节点 `candidate_node.py`：可选输入 `prompt_profile`（默认 `auto`，追加在
+  签名末尾保持旧位置调用兼容）；候选头部回显命中 Profile 名与匹配来源，回退时标注
+  通用规则。客户端 `prompt_candidates` 直接透传 body，未改签名。
+- 前端 `WorkflowWorkbench.tsx`：候选区 Profile 下拉（`自动匹配 Profile` 默认项 + 后端
+  动态列表，标注架构与停用态，选择写入 localStorage 记忆）；生成消息回显命中 Profile
+  来源、回退原因与不兼容警告。
+
+### 166.3 测试与回归
+
+- 新增 `backend/test_prompt_profiles.py` 11 例：扫描校验/章节警告/哈希不一致致命错误、
+  exact→架构→回退匹配链、手动不存在/停用/不兼容、三层分段顺序、staging 发布归档与
+  版本递增、回滚恢复归档规则、删除二次确认、API 列表/详情/404、候选三层注入断言、
+  无匹配回退断言。
+- 后端全量回归：422 项通过；已知环境型失败仅 sidebar 在线 LoRA 探测（ComfyUI 在线
+  时读到本机 LoRA）；stopper 用例清理 PID/runtime 残留后通过。前端 `tsc -b &&
+  vite build` 37 模块构建绿。
+
+### 166.4 真机通路（通过）
+
+- 重启后端加载新路由（loopback 17890，浏览器禁开）。`GET /api/prompt-profiles` 返回
+  13 份 Profile，全部 `auto_eligible=True`、无致命错误。
+- 验收工作流 `36e013df-…`（checkpoint `intorealismUltra_v80.safetensors`）：
+  Auto 候选精确命中 `intorealism_ultra_v8`（source=exact，version 1.0.0，返回
+  content_hash），`system_prompt_layers` 三层均 true，无回退原因、无架构警告。
+- 手动指定 `ponydiffusion_v6_xl`：source=manual，返回 Pony Diffusion V6 XL，
+  触发「手动选择的 Profile 与工作流架构可能不兼容」警告，三层仍注入。
+- 候选后 `keep_alive:0` 卸载，`ollama ps` 为空，显存回到 ComfyUI 驻留的约 2GB，
+  未 OOM；未提交出图，工作流草稿与历史未被改动。
+
+### 166.5 遗留与后置
+
+- 13 份 legacy Profile 章节缺口待人工按 `templates/MODEL_RULE_TEMPLATE.txt` 补全；
+  新增 Profile 由人工把规则文件/研究记录放入 `staging/` 后经发布接口（或后续前端
+  Profile 管理页）入 `models/`。
+- 前端目前仅候选区选择 Profile；Profile 的列表管理/详情/发布/停用/回滚界面尚未做，
+  当前经 API 与本地目录操作。
+- 后续可补：Profile 跨工作流复制、收藏分组置顶、回收站；LoRA 触发词元数据整理等。
+
 
 
 

@@ -1,0 +1,52 @@
+[IDENTITY]
+模型名称：
+版本：
+身份说明：
+
+[MODEL_ARCHITECTURE]
+模型架构 / 基础体系：
+基座模型：
+模型类型（Checkpoint / LoRA / VAE 等）：
+
+[HASH_VERIFICATION]
+模型文件 SHA256：
+哈希核实情况（已核实 / 部分匹配 / 未知）：
+核实日期：
+
+[PROMPT_SYNTAX]
+适用的提示词语法（标签式 / 自然描述 / 混合）：
+分隔符与写法约定：
+触发词：
+
+[PROMPT_ORDER]
+提示词推荐组织顺序：
+
+[QUALITY_TAGS]
+质量标签及使用建议（哪些可用、哪些不建议堆叠）：
+
+[CHARACTER_TAGS]
+人物及外观描述方式：
+
+[STYLE_TAGS]
+视觉风格表达方式：
+
+[NEGATIVE_PROMPT]
+负面提示词策略与常用排除项：
+
+[MODEL_PREFERENCES]
+模型已知偏好（构图、光线、肤色、镜头等倾向）：
+
+[AVOID]
+不推荐的写法和不适用的标签：
+
+[EXAMPLES]
+有效示例及其来源：
+示例 1：
+示例 2：
+
+[CONFIDENCE]
+规则可信度与证据等级（A 已验证事实 / B 高可信经验 / C 未确认信息）：
+未确认项清单：
+
+[SOURCES]
+资料来源（可追溯链接 / 作者页面 / 社区出处）与访问日期：

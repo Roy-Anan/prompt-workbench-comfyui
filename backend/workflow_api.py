@@ -12,6 +12,7 @@ import datadir
 import generation_history
 import llm_client
 import model_identity
+import prompt_profiles
 import rule_compare
 import rule_prompt
 import rule_store
@@ -141,6 +142,7 @@ class PromptCandidateRequest(BaseModel):
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     num_ctx: int | None = Field(default=None, ge=1024, le=131_072)
     locked_fragments: list[str] | None = Field(default=None)
+    prompt_profile: str | None = Field(default=None, max_length=120)
 
     @field_validator("locked_fragments")
     @classmethod
@@ -620,8 +622,36 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
         context = _unregistered_context()
     rule_payload = rule_prompt.build_prompt_context(context)
 
+    # Local three-layer composition: Core generic rules -> Model-specific
+    # Profile -> workflow dynamic rules. No remote lookup or weight hashing.
+    profile_choice = prompt_profiles.match_profile(
+        checkpoint,
+        context.get("architecture_label"),
+        context.get("architecture_family"),
+        manual=payload.prompt_profile,
+    )
+    profile_rules = ""
+    profile_meta: dict[str, Any] | None = None
+    if profile_choice["profile_id"]:
+        full = prompt_profiles.get_profile(profile_choice["profile_id"])
+        if full:
+            profile_rules = full.get("rules", "") or ""
+            profile_meta = {
+                "id": full.get("id"),
+                "display_name": full.get("display_name"),
+                "version": full.get("version"),
+                "content_hash": full.get("content_hash"),
+                "architecture": full.get("architecture"),
+            }
+
+    core_text = prompt_profiles.core_prompt_text()
+    workflow_rules_text = _rules_system_message(rule_payload)
+    system_content = prompt_profiles.compose_system_prompt(
+        core_text, profile_rules, workflow_rules_text
+    )
+
     messages = [
-        {"role": "system", "content": _rules_system_message(rule_payload)},
+        {"role": "system", "content": system_content},
         {
             "role": "user",
             "content": _user_message(
@@ -677,6 +707,20 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
         "rule_status": rule_payload["status"],
         "conflicts": rule_payload["conflicts"],
         "unknown": rule_payload["unknown"],
+        "selected_profile_id": profile_choice["profile_id"],
+        "selected_profile_name": profile_choice["display_name"],
+        "profile_match_source": profile_choice["match_source"],
+        "profile_version": profile_meta["version"] if profile_meta else None,
+        "profile_content_hash": profile_meta["content_hash"] if profile_meta else None,
+        "checkpoint_name": checkpoint,
+        "architecture": context.get("architecture_label"),
+        "fallback_reason": profile_choice["fallback_reason"],
+        "profile_warning": profile_choice["warning"],
+        "system_prompt_layers": {
+            "core": bool(core_text.strip()),
+            "profile": bool(profile_rules.strip()),
+            "workflow": bool(workflow_rules_text.strip()),
+        },
     }
 
 

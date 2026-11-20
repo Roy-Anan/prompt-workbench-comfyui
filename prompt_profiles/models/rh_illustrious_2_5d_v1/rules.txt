@@ -1,0 +1,59 @@
+# MODEL PROFILE — RH Illustrious 2.5D V1
+
+[IDENTITY]
+Display Name: RH Illustrious 2.5D V1
+Exact Checkpoint Filename: RH_Illustrious_2.5D_V1.safetensors
+Version: V1
+Author / Model Card: huggingface.co/RunningHubAI/rh-illustrious-2.5d-v1-checkpoint；作者 RunningHub-@NINE.JIUGE；HF 文件名 Illustrious 2.5D半逼真动画风格_V1.safetensors（SHA256 一致）
+
+[ARCHITECTURE]
+Base Architecture: [已核实] 微调自 IL-XL（Illustrious XL）
+Model Type: [已核实] Checkpoint；2.5D 半写实动画风格
+VAE: 未给出
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然描述/标签；不要套用 Pony score 评分标签
+Author Positive Example: 未给出
+Author Negative Example: 未给出
+
+[GENERATION SETTINGS]
+Resolution: 未给出
+Sampler: 未给出（旧系内通用值不可当作作者推荐）
+Scheduler: 未给出
+Steps: 未给出
+CFG: 未给出
+Parameter Source: 身份/底座/风格 [已核实]；生成参数全部 [未给出]
+Source Note: HF 文件 SHA256 与本地一致，身份已确认；作者未公开采样器/步数/CFG/分辨率/VAE/Clip Skip/范例，禁止用系内通用参数冒充该版本官方推荐。
+
+[MODEL BEHAVIOR]
+Strengths: 2.5D 半写实 CG 动画风格
+Known Weaknesses: 版本采样参数未实测/未公开；曾观察到布料/毯子类遮挡偏好（单次观察）
+NSFW / Mature Content Statement: 已读来源无成熟向声明；不作能力保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: VAE、Clip Skip、触发词、官方采样器/调度器/步数/CFG/分辨率、完整正负面范例
+Last Updated: 2026-11-07

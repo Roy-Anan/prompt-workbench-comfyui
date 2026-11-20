@@ -1,0 +1,62 @@
+# MODEL PROFILE — HuslyoRealismXL V2 DMD
+
+[IDENTITY]
+Display Name: HuslyoRealismXL V2 DMD
+Exact Checkpoint Filename: huslyorealismxl_v2DMD.safetensors
+Version: V2 - DMD
+Author / Model Card: fastsdmodel.com/models/1802228（DMD version 段）
+File Size: 6616.6 MB
+SHA256: 33B5ABCA14DC6F6A49E5353D94B30E77C63518DA734915D74AF3F0CEF74538A3
+Identity Note: [镜像核实] 找到 DMD 专属版本记录，SHA256 与本地完全一致；确认属 DMD 版，非普通版/V3。
+
+[ARCHITECTURE]
+Base Architecture: [作者说明] SDXL
+Model Type: [作者推荐] DMD 版本（蒸馏/加速）
+VAE: 未给出
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然语言 + 摄影描述，写实人像
+Author Positive Example: 未取得完整作者范例
+Author Negative Example: 作者系列负面：cartoon, illustration, anime, painting, CGI, 3D render, low quality, watermark, logo, label, deformed eyes, deformed iris
+
+[GENERATION SETTINGS]
+Resolution: SDXL 友好分辨率
+Sampler: [作者推荐] LCM
+Scheduler: [作者推荐] Karras
+Steps: [作者推荐] 7
+CFG: [作者推荐] 1
+Parameter Source: 身份/专属版本 [镜像核实]；DMD 版采样参数 [作者推荐]；VAE/Clip Skip/正向范例 [待核实]
+Source Note: 蒸馏加速版，必须低步低 CFG；DMD 参数只属 DMD 版，禁止与普通版/V3 混用。
+
+[MODEL BEHAVIOR]
+Strengths: 出图快、显存压力小，写实人像
+Known Weaknesses: 相对标准版细节有少量损失；脸部建议配 FaceDetailer
+NSFW / Mature Content Statement: 作者声明该系列支持 SFW/NSFW；属作者声明，非输出保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+[已实测] 本机曾以 20 步 / CFG 6.5 跑通，但非该 DMD 版最优参数。
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: VAE、Clip Skip、完整正向范例
+Last Updated: 2026-11-07

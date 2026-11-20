@@ -31,3 +31,9 @@ legacy/src-tauri/gen/
 # Other local user data
 data/
 workbench-data/
+
+# Profile staging drops and runtime archive snapshots are local working
+# copies; published rules under prompt_profiles/models and the manifest are
+# committed, but transient staged drafts and archived revisions are not.
+/prompt_profiles/staging/*
+/prompt_profiles/archive/*

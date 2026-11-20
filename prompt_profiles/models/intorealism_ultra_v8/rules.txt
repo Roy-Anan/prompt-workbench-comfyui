@@ -1,0 +1,59 @@
+# MODEL PROFILE — IntoRealism Ultra V8
+
+[IDENTITY]
+Display Name: IntoRealism Ultra V8
+Exact Checkpoint Filename: intorealismUltra_v80.safetensors
+Version: V8.0（SHA256 一致，已核实版本身份）
+Author / Model Card: civarchive.com/models/1950841?modelVersionId=2614800；SHA256 fa67805b…c7380 与本地一致；工作流线索 civitai.com/models/2383077
+
+[ARCHITECTURE]
+Base Architecture: [已核实] SDXL 1.0
+Model Type: [作者说明] DMD2 + Light 混合；早期测试版本（experimental）
+VAE: 未给出
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 简洁自然语言，写实人像/生活/电影场景；作者说明负面提示词可正常生效
+Author Positive Example: 完整官方正面范例未找到
+Author Negative Example: 完整官方负面范例未找到；作者说明负面词可正常发挥作用
+
+[GENERATION SETTINGS]
+Resolution: [作者推荐] 896×1152 / 832×1216
+Sampler: [作者推荐] Euler A Karras / Exponential
+Scheduler: Karras（Euler A 时）
+Steps: [作者推荐] 6~12
+CFG: [作者推荐] 1.5~2
+Parameter Source: 身份/底座 [已核实]；版本类型/采样参数 [作者说明]/[作者推荐]；VAE/Clip Skip/范例 [未给出]
+Source Note: 早期测试版；蒸馏/轻量混合，需低步低 CFG，勿套用普通 SDXL 30+ 步/高 CFG。
+
+[MODEL BEHAVIOR]
+Strengths: 增强写实（纹理/皮肤/自然光）；LoRA 贴合较好；人像/生活/电影场景通用（作者说明）
+Known Weaknesses: 早期测试版，稳定性与画质仍可能迭代；本地未实测
+NSFW / Mature Content Statement: 作者声明可处理成熟向内容；属作者单方声明，本机未实测，不作输出保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: VAE、Clip Skip、触发词、完整正负面范例、本机实测表现
+Last Updated: 2026-11-07

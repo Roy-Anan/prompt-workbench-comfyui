@@ -1,0 +1,59 @@
+# MODEL PROFILE — Juggernaut XI by RunDiffusion
+
+[IDENTITY]
+Display Name: Juggernaut XI by RunDiffusion
+Exact Checkpoint Filename: Juggernaut-XI-byRunDiffusion.safetensors
+Version: XI
+Author / Model Card: rundiffusion.com/juggernaut-xi
+
+[ARCHITECTURE]
+Base Architecture: [已核实] SDXL 1.0
+Model Type: Checkpoint；VAE 已内置（作者说明）
+VAE: 内置（baked-in，作者说明）
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然语言 + 摄影描述；写实人像优先
+Author Positive Example: [作者示例] A world globe with a wooden base and bronze meridian, blue ocean, and political map
+Author Negative Example: [作者示例] bad eyes, cgi, airbrushed, plastic, deformed
+
+[GENERATION SETTINGS]
+Resolution: [作者示例] 832×1216；[作者指南] 1024×1024 / 832×1216 / 1216×832
+Sampler: [作者示例] DPM++ 2M SDE；[作者指南] DPM++ 2M Karras
+Scheduler: [作者示例] Exponential；[作者指南] 未给出
+Steps: [作者示例] 35；[作者指南] 25~40
+CFG: [作者示例] 4；[作者指南] 4~6
+Parameter Source: 示例图参数 [作者示例]；官方提示指南另一套 [作者指南]，两者分开记录不混为一组；Clip Skip [待核实]
+Source Note: 示例与指南是两套建议；偏欧美五官。
+
+[MODEL BEHAVIOR]
+Strengths: SDXL 写实人像，光影与皮肤质感稳定
+Known Weaknesses: 东亚面孔非其倾向；本机实测不符合预期，不作为成人向首选
+NSFW / Mature Content Statement: 已读来源未作成熟向能力保证；本机反馈见 LOCAL TEST FEEDBACK。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+本机实测：成人向预期未达，效果不符合预期；不因有官方资料而重推为首选。
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: Clip Skip、更多完整正负面范例、其他分辨率
+Last Updated: 2026-11-07

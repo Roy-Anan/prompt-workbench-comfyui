@@ -1,0 +1,65 @@
+# MODEL PROFILE — WAI Illustrious SDXL v1.70
+
+[IDENTITY]
+Display Name: WAI Illustrious SDXL v1.70
+Exact Checkpoint Filename: waiIllustriousSDXL_v170.safetensors
+Version: v17.0（官方版本文件名 WAI-Nsfw-Illustrious-17.safetensors，与本地文件名不同，哈希一致）
+Author / Model Card: civitaiarchive.com/models/827184?modelVersionId=2883731（CivArchive 镜像，非作者官网）
+File Size: 6616.6 MB
+SHA256: F116B0C78FF441467B0CDC8F1936E1ED18EA31E9997C7B132B1B8DB533F0BD04
+Identity Note: [镜像核实] Hugging Face 文件记录与 Civitai 版本镜像记录均找到相同 SHA256，本地身份匹配，可对应到 v17.0。
+
+[ARCHITECTURE]
+Base Architecture: [作者推荐] Illustrious SDXL 系
+Model Type: [作者推荐] Checkpoint
+VAE: [作者推荐] 内置（baked-in）
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然描述 + 少量质量标签（Illustrious 系；不使用 Pony score 标签）
+Author Positive Example: 作者正面片段：,masterpiece,best quality,amazing quality,
+Author Negative Example: 作者负面片段：bad quality,worst quality,worst detail,sketch,censor,
+Source Note: 作者提醒：不要堆叠太多画质标签，也不要使用过长的负面提示词，否则可能降低画质、让图像变模糊。
+
+[GENERATION SETTINGS]
+Resolution: [作者推荐] 原始尺寸建议大于 1024×1024；示例分辨率 1024×1344
+Sampler: [作者推荐] Euler a
+Scheduler: 未给出
+Steps: [作者推荐] 15~30
+CFG: [作者推荐] 5~7
+Parameter Source: 身份 [镜像核实]；底座/类型/VAE/分辨率/采样器/步数/CFG [作者推荐]；Scheduler/Clip Skip/触发词/完整范例 [未给出]
+派系标签: Illustrious 系
+画风标签: 2.5D 插画、二次元动漫（具体画风细节待核实）
+
+[MODEL BEHAVIOR]
+Strengths: Illustrious 系动漫/2.5D 向（作者定位）
+Known Weaknesses: 完整画廊范例与部分参数未取得
+Known Biases / Frequent Unwanted Elements: 待实测
+NSFW / Mature Content Statement: 官方版本文件名含 Nsfw 字样；属作者命名与定位，本机未实测，不作输出保证，合规红线仍以本地规则包限制为准。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial（身份镜像核实；作者设置与标签片段已摘录，完整范例与部分字段未取得）
+Verified locally: no
+Uncertain fields: Clip Skip、Scheduler、触发词、完整画廊正负面范例、画风细节、本机实测表现
+Last Updated: 2026-11-07

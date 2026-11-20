@@ -1,0 +1,62 @@
+# MODEL PROFILE — majicMIX realistic v7（麦橘写实）
+
+[IDENTITY]
+Display Name: majicMIX realistic v7（麦橘写实）
+Exact Checkpoint Filename: majicMIX realistic v7.safetensors
+Version: V7
+Author / Model Card: civitai.com/models/43331?modelVersionId=176425；HF 元数据：huggingface.co/burhansyam/majicmix/blob/main/majicmixRealistic_v7.json
+File Size: 2033.8 MB
+SHA256: 7C819B6D13663ED720C2254F4FE18373107DFEF2448D337913C8FC545640881E
+
+[ARCHITECTURE]
+Base Architecture: [已核实] SD1.5（SHA256 一致）
+Model Type: [已核实] Checkpoint；文件身份确认
+VAE: [作者示例] vae-ft-mse-840000-ema-pruned.safetensors（示例图元数据，作者未声明必须外置，非强制推荐）
+Clip Skip: [作者推荐] 2；[作者示例] 2（示例图元数据，二者一致）
+Trigger Words: 官方版本记录未列出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然语言短语 + 摄影描述（社区习惯）
+Author Positive Example: [作者推荐] Best quality, masterpiece, ultra high res, (photorealistic:1.4), 1girl
+Author Positive Example 2: [作者示例] 1girl, sweater, white background,
+Author Negative Example: 无完整文本负面范例；作者提到可使用负面嵌入 ng_deepnegative_v1_75t、badhandv4（嵌入，不等于完整 Negative Prompt）
+
+[GENERATION SETTINGS]
+Resolution: [作者示例] 512×768；官方固定分辨率未给出
+Sampler: [作者推荐] Euler a / Euler / Restart；[作者示例] Euler a
+Scheduler: 未给出
+Steps: [作者推荐] 20~40；[作者示例] 20
+CFG: [作者推荐] 6~8；[作者示例] 12（示例图参数，不要覆盖作者推荐的 6~8）
+Parameter Source: 身份 [已核实]；作者推荐采样器/步数/CFG/Clip Skip [作者推荐]；示例图元数据参数 [作者示例]，不代表作者要求所有图使用该组参数
+Source Note: 示例参数来自作者版本一张样图的元数据；官方固定分辨率、完整文本负面范例、调度器仍缺。
+
+[MODEL BEHAVIOR]
+Strengths: 东亚写实人像倾向（社区评价）
+Known Weaknesses: SD1.5 分辨率上限；固定分辨率与完整负面范例未确认
+NSFW / Mature Content Statement: 已读来源无明确成熟向声明；不作能力保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: 官方固定分辨率、调度器、完整文本负面范例、触发词、是否强制外置 VAE
+Last Updated: 2026-11-07

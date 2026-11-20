@@ -1,0 +1,59 @@
+# MODEL PROFILE — Anything V5
+
+[IDENTITY]
+Display Name: Anything V5
+Exact Checkpoint Filename: anything-v5.safetensors
+Version: V5
+Author / Model Card: HF 镜像：huggingface.co/genai-archive/anything-v5；版本记录镜像：civarchive.com/tensorart/models/636436281485913520（均为镜像/版本记录，非作者官网）
+
+[ARCHITECTURE]
+Base Architecture: [已核实] SD1.5（SHA256 一致）
+Model Type: [已核实] Checkpoint；文件身份经哈希对照确认
+VAE: 未给出
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: Danbooru 标签式，简洁标签优先（社区习惯，非官方模板）
+Author Positive Example: 未找到官方完整范例
+Author Negative Example: 未找到官方完整范例
+
+[GENERATION SETTINGS]
+Resolution: 未给出（社区参考 512×768，待核实）
+Sampler: 未给出（社区参考 DPM++ SDE Karras / Euler a，待核实）
+Scheduler: 未给出
+Steps: 未给出（社区参考 20~30，待核实）
+CFG: 未给出（社区参考 6~8，待核实）
+Parameter Source: 文件身份/底座/类型 [已核实]；采样参数 [起始测试值·社区经验]，未获作者确认
+Source Note: 本轮仅通过文件镜像与版本记录确认身份，未找到足以确认全部参数的作者说明；括号内社区参考值不可标为作者推荐。
+
+[MODEL BEHAVIOR]
+Strengths: 动漫/赛璐璐风格倾向（社区评价）
+Known Weaknesses: 写实人像非其定位；采样参数未经官方确认
+NSFW / Mature Content Statement: 已读来源无成熟向声明；不作能力保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: VAE、Clip Skip、触发词、官方分辨率/采样器/调度器/步数/CFG、完整正负面范例
+Last Updated: 2026-11-07

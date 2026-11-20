@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "anything_v5",
+      "display_name": "Anything V5",
+      "description": "由 legacy-materials 迁移的 Anything V5 规则记录。",
+      "enabled": true,
+      "architecture": "SD1.5",
+      "checkpoint_patterns": [
+        "anything-v5.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/anything_v5/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/Anything_V5.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "77895e5e8deed319442debbe91696265b918cae4709ba3d2ee36828f3353859f",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "autismmix_pony",
+      "display_name": "AutismMix SDXL AutismMix Pony",
+      "description": "由 legacy-materials 迁移的 AutismMix SDXL AutismMix Pony 规则记录。",
+      "enabled": true,
+      "architecture": "Pony",
+      "checkpoint_patterns": [
+        "autismmixSDXL_autismmixPony.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/autismmix_pony/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/AutismMix_Pony.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "5bf13273d7e8acad95852132e92227c79bb1e80f6b29ac10a49c568920b13eee",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "cyberrealisticpony_v18",
+      "display_name": "CyberRealisticPony V18.0 F16",
+      "description": "由 legacy-materials 迁移的 CyberRealisticPony V18.0 F16 规则记录。",
+      "enabled": true,
+      "architecture": "Pony",
+      "checkpoint_patterns": [
+        "CyberRealisticPony_V18.0_F16.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/cyberrealisticpony_v18/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/CyberRealisticPony_V18.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "c0f7e5cdb408e60ea87f6c1db03690a48ace9c1933f9119934b0f9bef6db0adf",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "ghostmix_v2",
+      "display_name": "GhostMix V2.0",
+      "description": "由 legacy-materials 迁移的 GhostMix V2.0 规则记录。",
+      "enabled": true,
+      "architecture": "SD1.5",
+      "checkpoint_patterns": [
+        "GhostMix_v2.0.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/ghostmix_v2/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/GhostMix_V2.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "7c6dce49694852831f7ed0fa706e38764e9e0d0d3d4dd16f0cf306f5a74d8d4f",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "huslyorealismxl_v2_dmd",
+      "display_name": "HuslyoRealismXL V2 DMD",
+      "description": "由 legacy-materials 迁移的 HuslyoRealismXL V2 DMD 规则记录。",
+      "enabled": true,
+      "architecture": "SDXL",
+      "checkpoint_patterns": [
+        "huslyorealismxl_v2DMD.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/huslyorealismxl_v2_dmd/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/HuslyoRealismXL_V2_DMD.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "7bd8871426a7209a8b9754b66de85c42d4038b9c8e1a9d340a3f8f39cde95dd7",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "huslyorealismxl_v3",
+      "display_name": "HuslyoRealismXL V3（标准版）",
+      "description": "由 legacy-materials 迁移的 HuslyoRealismXL V3（标准版） 规则记录。",
+      "enabled": true,
+      "architecture": "SDXL 1.0",
+      "checkpoint_patterns": [
+        "HuslyoRealismSDXL_v3.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/huslyorealismxl_v3/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/HuslyoRealismXL_V3.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "59e1a756dd7cd95619f5f34a9286396d9bf4fdf5cbd86ba35a3639bd02f2c2cc",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "intorealism_ultra_v8",
+      "display_name": "IntoRealism Ultra V8",
+      "description": "由 legacy-materials 迁移的 IntoRealism Ultra V8 规则记录。",
+      "enabled": true,
+      "architecture": "SDXL 1.0",
+      "checkpoint_patterns": [
+        "intorealismUltra_v80.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/intorealism_ultra_v8/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/IntoRealism_Ultra_V8.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "09dcb3041308cf237e030d25686cd0616d38c8820b55e9188a203b1367c2b41b",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "juggernaut_xi",
+      "display_name": "Juggernaut XI by RunDiffusion",
+      "description": "由 legacy-materials 迁移的 Juggernaut XI by RunDiffusion 规则记录。",
+      "enabled": true,
+      "architecture": "SDXL 1.0",
+      "checkpoint_patterns": [
+        "Juggernaut-XI-byRunDiffusion.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/juggernaut_xi/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/Juggernaut_XI.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "c94a1e0eb71604c89393732d51454536f313cb0ab92d69a54e7ea7955b8a0db1",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "juggernautxl_ragnarok",
+      "display_name": "Juggernaut XL Ragnarok",
+      "description": "由 legacy-materials 迁移的 Juggernaut XL Ragnarok 规则记录。",
+      "enabled": true,
+      "architecture": "SDXL",
+      "checkpoint_patterns": [
+        "juggernautXL_ragnarokBy.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/juggernautxl_ragnarok/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/JuggernautXL_Ragnarok.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "8d428322be34d8c74093c86f78ec0dfa7322aade5fa94e743676b6c693841fa4",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "majicmix_realistic_v7",
+      "display_name": "majicMIX realistic v7（麦橘写实）",
+      "description": "由 legacy-materials 迁移的 majicMIX realistic v7（麦橘写实） 规则记录。",
+      "enabled": true,
+      "architecture": "SD1.5",
+      "checkpoint_patterns": [
+        "majicMIX realistic v7.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/majicmix_realistic_v7/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/majicMIX_Realistic_V7.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "e618c983d296ff11dc0900fcd0852ec1c839b75ed441c9e9378fc4f93979689d",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "ponydiffusion_v6_xl",
+      "display_name": "Pony Diffusion V6 XL",
+      "description": "由 legacy-materials 迁移的 Pony Diffusion V6 XL 规则记录。",
+      "enabled": true,
+      "architecture": "Pony / SDXL 系",
+      "checkpoint_patterns": [
+        "ponyDiffusionV6XL_v6.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/ponydiffusion_v6_xl/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/PonyDiffusion_V6_XL.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "ca97aedaa2783bce6557fbc096fe26569949d1c6969c50b350f7cdc9316990b0",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "rh_illustrious_2_5d_v1",
+      "display_name": "RH Illustrious 2.5D V1",
+      "description": "由 legacy-materials 迁移的 RH Illustrious 2.5D V1 规则记录。",
+      "enabled": true,
+      "architecture": "微调自 IL-XL",
+      "checkpoint_patterns": [
+        "RH_Illustrious_2.5D_V1.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/rh_illustrious_2_5d_v1/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/RH_Illustrious_2.5D_V1.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "a51639e06c2b9d03a7b39d83c968ae231dd09f25c1460671850f70713bd116b0",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    },
+    {
+      "id": "waiillustrious_v170",
+      "display_name": "WAI Illustrious SDXL v1.70",
+      "description": "由 legacy-materials 迁移的 WAI Illustrious SDXL v1.70 规则记录。",
+      "enabled": true,
+      "architecture": "Illustrious SDXL 系",
+      "checkpoint_patterns": [
+        "waiIllustriousSDXL_v170.safetensors"
+      ],
+      "aliases": [],
+      "rules_file": "models/waiillustrious_v170/rules.txt",
+      "version": "1.0.0",
+      "source": "legacy-materials/profiles/WaiIllustrious_v170.txt",
+      "created_at": "2026-11-20T00:00:00+00:00",
+      "updated_at": "2026-11-20T00:00:00+00:00",
+      "content_hash": "c2506776ddde9a1cc2a6ae8f56bc297e5655a2124c460e2a64b30c1e719000b7",
+      "trigger_words": [],
+      "incompatible_architectures": [],
+      "priority": 10,
+      "author": "",
+      "research_status": "legacy"
+    }
+  ]
+}

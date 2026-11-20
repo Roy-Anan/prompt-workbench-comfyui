@@ -33,6 +33,7 @@ import lora_metadata
 import model_catalog
 import model_identity
 import profile_source
+import prompt_profiles
 import queue_dispatcher
 import rule_engine
 import rule_store
@@ -1665,6 +1666,86 @@ def import_profile(payload: ProfileImport):
     except FileNotFoundError:
         raise HTTPException(404, f"Profile not found: {payload.file_name}") from None
     except rule_engine.RuleError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+# ---- Local Prompt Profile registry (Core + Model-specific rules) ---------
+
+class ProfileConfirm(BaseModel):
+    confirm: bool = False
+
+
+@app.get("/api/prompt-profiles")
+def list_prompt_profiles():
+    """List registered local Prompt Profiles with validation state."""
+    return {"items": prompt_profiles.list_profiles()}
+
+
+@app.get("/api/prompt-profiles/staging")
+def list_profile_staging():
+    """List staged Profile directories awaiting review/publish."""
+    return {"items": prompt_profiles.list_staging()}
+
+
+@app.get("/api/prompt-profiles/{profile_id}")
+def get_prompt_profile(profile_id: str):
+    entry = prompt_profiles.get_profile(profile_id)
+    if entry is None:
+        raise HTTPException(404, f"Profile not found: {profile_id}")
+    return entry
+
+
+@app.post("/api/prompt-profiles/staging/{profile_id}/publish")
+def publish_prompt_profile(profile_id: str):
+    try:
+        return prompt_profiles.publish_from_staging(profile_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/prompt-profiles/{profile_id}/disable")
+def disable_prompt_profile(profile_id: str):
+    try:
+        return prompt_profiles.set_enabled(profile_id, False)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Profile not found: {profile_id}") from None
+
+
+@app.post("/api/prompt-profiles/{profile_id}/enable")
+def enable_prompt_profile(profile_id: str):
+    try:
+        return prompt_profiles.set_enabled(profile_id, True)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Profile not found: {profile_id}") from None
+
+
+@app.get("/api/prompt-profiles/{profile_id}/versions")
+def list_profile_versions(profile_id: str):
+    if prompt_profiles.get_profile(profile_id) is None:
+        raise HTTPException(404, f"Profile not found: {profile_id}")
+    return {"items": prompt_profiles.list_versions(profile_id)}
+
+
+@app.post("/api/prompt-profiles/{profile_id}/rollback/{stamp}")
+def rollback_prompt_profile(profile_id: str, stamp: str):
+    try:
+        return prompt_profiles.rollback(profile_id, stamp)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/prompt-profiles/{profile_id}")
+def delete_prompt_profile(profile_id: str, payload: ProfileConfirm | None = None):
+    confirm = bool(payload and payload.confirm)
+    try:
+        return prompt_profiles.delete_profile(profile_id, confirm)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Profile not found: {profile_id}") from None
+    except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

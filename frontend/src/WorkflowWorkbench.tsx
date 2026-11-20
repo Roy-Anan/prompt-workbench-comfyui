@@ -156,7 +156,26 @@ type CandidateResponse = {
   rule_status: string;
   conflicts: unknown[];
   unknown: unknown[];
+  selected_profile_id?: string | null;
+  selected_profile_name?: string | null;
+  profile_match_source?: string;
+  profile_version?: string | null;
+  fallback_reason?: string | null;
+  profile_warning?: string | null;
+  architecture?: string | null;
+  system_prompt_layers?: { core: boolean; profile: boolean; workflow: boolean };
 };
+type PromptProfile = {
+  id: string;
+  display_name: string;
+  description: string;
+  architecture: string;
+  enabled: boolean;
+  version: string;
+  auto_eligible: boolean;
+  errors: string[];
+};
+type PromptProfilesResponse = { items: PromptProfile[] };
 type ComfyTask = {
   prompt_id: string;
   workflow_id: string;
@@ -659,6 +678,10 @@ export default function WorkflowWorkbench({
   const [selectedModel, setSelectedModel] = useState(() =>
     readStoredParam("workbench.selectedModel"),
   );
+  const [profiles, setProfiles] = useState<PromptProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState(() =>
+    readStoredParam("workbench.selectedProfile") || "auto",
+  );
   const [taskText, setTaskText] = useState(() =>
     readStoredParam("workbench.candidateTask"),
   );
@@ -750,6 +773,7 @@ export default function WorkflowWorkbench({
   }, []);
   useEffect(() => {
     void loadModels();
+    void loadProfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -979,6 +1003,15 @@ export default function WorkflowWorkbench({
       setBusy(false);
     }
   }
+  async function loadProfiles() {
+    try {
+      const result = await apiGet<PromptProfilesResponse>("/api/prompt-profiles");
+      setProfiles(result.items ?? []);
+    } catch {
+      // Profiles are optional: keep the default auto match on failure.
+      setProfiles([]);
+    }
+  }
   async function loadModels() {
     try {
       const result = await apiGet<OllamaModelsResponse>("/api/ollama/models");
@@ -1014,6 +1047,10 @@ export default function WorkflowWorkbench({
       if (topP !== null) body.top_p = topP;
       if (numCtx !== null) body.num_ctx = numCtx;
       if (lockedFragments.length) body.locked_fragments = lockedFragments;
+      const profileChoice = (selectedProfile || "auto").trim();
+      if (profileChoice && profileChoice !== "auto") {
+        body.prompt_profile = profileChoice;
+      }
       const result = await apiPost<CandidateResponse>(
         `/api/workflows/${workflowId}/prompt/candidates`,
         body,
@@ -1030,7 +1067,11 @@ export default function WorkflowWorkbench({
         setActiveCandidate(nextIndex);
         setCompareOther(null);
       }
-      setMessage(`已生成候选（规则状态：${result.rule_status}），采用前请核对。`);
+      const profileNote = result.selected_profile_name
+        ? `，Profile：${result.selected_profile_name}（${result.profile_match_source || "auto"}）`
+        : `，Profile 回退通用规则${result.fallback_reason ? `（${result.fallback_reason}）` : ""}`;
+      const warnNote = result.profile_warning ? `；${result.profile_warning}` : "";
+      setMessage(`已生成候选（规则状态：${result.rule_status}）${profileNote}${warnNote}，采用前请核对。`);
     } catch (error) {
       setMessage(`候选生成失败：${String(error)}`);
     } finally {
@@ -2355,6 +2396,37 @@ export default function WorkflowWorkbench({
                           return (
                             <option key={model} value={model}>
                               {label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <select
+                        value={selectedProfile}
+                        disabled={busy || candidateBusy}
+                        onChange={(event) => {
+                          setSelectedProfile(event.target.value);
+                          persistParam(
+                            "workbench.selectedProfile",
+                            event.target.value,
+                          );
+                        }}
+                        title="模型专用规则 Profile；自动匹配按 checkpoint 文件名与架构选择"
+                      >
+                        <option value="auto">自动匹配 Profile</option>
+                        {profiles.map((profile) => {
+                          const arch = profile.architecture
+                            ? `｜${profile.architecture}`
+                            : "";
+                          const stateTag = profile.enabled ? "" : "（已停用）";
+                          return (
+                            <option
+                              key={profile.id}
+                              value={profile.id}
+                              disabled={!profile.enabled}
+                            >
+                              {profile.display_name}
+                              {arch}
+                              {stateTag}
                             </option>
                           );
                         })}

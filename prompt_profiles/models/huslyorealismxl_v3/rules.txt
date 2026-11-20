@@ -1,0 +1,59 @@
+# MODEL PROFILE — HuslyoRealismXL V3（标准版）
+
+[IDENTITY]
+Display Name: HuslyoRealismXL V3（标准版）
+Exact Checkpoint Filename: HuslyoRealismSDXL_v3.safetensors
+Version: V3（SHA256 一致，已核实为作者 V3 版本）
+Author / Model Card: civarchive.com/models/1802228?modelVersionId=3400474；SHA256 d1bcfa29…1cdA 与本地一致；非 V2 DMD、非普通 V2
+
+[ARCHITECTURE]
+Base Architecture: [已核实] SDXL 1.0
+Model Type: [已核实] Checkpoint V3；[作者声明] 可作为 ComfyUI 工作流 Refiner；实验性合并
+VAE: 未给出
+Clip Skip: [作者推荐·系列普通版说明] 2（非 V3 独立参数）
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然语言 + 摄影/自然光描述
+Author Positive Example: 画廊完整正向范例尚未提取；旧记关键词片段：natural light from the side, sunlight through the window, soft skin, golden hour light, film grain, bokeh, cinematic shallow DOF, lens softness, vintage/analog photo look（待核对）
+Author Negative Example: 作者系列负面：cartoon, illustration, anime, painting, CGI, 3D render, low quality, watermark, logo, label, deformed eyes, deformed iris（系列说明，待核对本版本）
+
+[GENERATION SETTINGS]
+Resolution: 系列普通版友好分辨率（768×1152 / 648×1152 / 864×1152，待核对 V3）
+Sampler: [作者推荐·系列普通版说明] DPM++ 2M SDE Karras / DPM++ SDE Karras
+Scheduler: [作者推荐·系列普通版说明] Karras
+Steps: [作者推荐·系列普通版说明] 30~32
+CFG: [作者推荐·系列普通版说明] 4~6
+Parameter Source: 身份/底座/Refiner 能力 [已核实]/[作者声明]；采样参数来自系列普通版说明 [作者推荐]，页面未单列 V3 独立参数；DMD 参数禁止套给 V3
+Source Note: 哈希一致确认本地文件即作者 V3；普通版与 DMD 版是两套参数，禁止混用。V3 独立采样参数、VAE 仍缺。
+
+[MODEL BEHAVIOR]
+Strengths: 系列倾向：皮肤细节、自然光、柔肤、胶片颗粒；可作 refiner（待本版本核对）
+Known Weaknesses: 页面未单列 V3 独立参数；脸部偏软
+NSFW / Mature Content Statement: 作者系列声明 SFW/NSFW 均可；属作者声明，非每幅输出保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: V3 独立采样参数、VAE、Clip Skip 是否 V3 专属、完整正向范例
+Last Updated: 2026-11-07

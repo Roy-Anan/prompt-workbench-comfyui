@@ -1,0 +1,59 @@
+# MODEL PROFILE — CyberRealisticPony V18.0 F16
+
+[IDENTITY]
+Display Name: CyberRealisticPony V18.0 F16
+Exact Checkpoint Filename: CyberRealisticPony_V18.0_F16.safetensors
+Version: V18.0
+Author / Model Card: civitai.tech/models/443821/cyberrealistic-pony（文件名 + 短哈希匹配）
+
+[ARCHITECTURE]
+Base Architecture: [已核实] Pony（Pony-based SDXL）
+Model Type: [已核实] Checkpoint；文件名 CyberRealisticPony_V18.0_F16.safetensors 匹配
+VAE: 未给出
+Clip Skip: [作者推荐] 2
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: Pony 标签 + 简洁摄影描述；作者另提供不使用普通 Pony 评分标签的另一种写法（具体未取得）
+Author Positive Example: [作者推荐] score_9, score_8_up, score_7_up, (SUBJECT),
+Author Negative Example: [作者推荐] score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs
+
+[GENERATION SETTINGS]
+Resolution: [作者推荐] 896×1152 / 832×1216
+Sampler: [作者推荐] DPM++ SDE Karras / DPM++ 2M Karras / Euler a
+Scheduler: 未给出
+Steps: [作者推荐] 30+
+CFG: [作者推荐] 5
+Parameter Source: 采样参数/Clip Skip/正负面范例 [作者推荐]；VAE/调度器 [待核实]
+Source Note: 页面示例图未使用 LoRA；出图异常先检查提示词结构与 LoRA 叠加。
+
+[MODEL BEHAVIOR]
+Strengths: Pony 系内偏写实，欧美五官倾向
+Known Weaknesses: 东亚面孔非其倾向；VAE 与完整画廊元数据未取得
+NSFW / Mature Content Statement: 本机单次观察对部分成熟向提示词有响应；属有限观察，不保证所有提示词/细节。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: VAE、调度器、触发词、完整画廊图元数据
+Last Updated: 2026-11-07

@@ -1,0 +1,59 @@
+# MODEL PROFILE — Pony Diffusion V6 XL
+
+[IDENTITY]
+Display Name: Pony Diffusion V6 XL
+Exact Checkpoint Filename: ponyDiffusionV6XL_v6.safetensors
+Version: V6 XL
+Author / Model Card: civitai.tech/models/257749/pony-diffusion-v6-xl?modelVersionId=290640；HF 元数据（独立 VAE 记录）
+
+[ARCHITECTURE]
+Base Architecture: [已核实] Pony / SDXL 系（SHA256 一致）
+Model Type: [已核实] Checkpoint
+VAE: [已核实] 作者提供独立 sdxl_vae.safetensors（不等于本 checkpoint 必须加载）
+Clip Skip: [作者推荐] 2
+Trigger Words: 没有必须使用的单一触发词
+
+[PROMPT STYLE]
+Preferred Prompt Format: Pony 标签词汇；提示词简洁，避免纯摄影散文；作者说明不需要额外堆叠 masterpiece、hd 等画质词
+Author Positive Example: 作者正面模板：score_9, score_8_up, score_7_up, score_6_up, score_5_up, score_4_up, just describe what you want, tag1, tag2
+Author Negative Example: 作者说明该模型多数情况下不需要负面提示词；无固定负面范例
+
+[GENERATION SETTINGS]
+Resolution: [作者推荐] SDXL 支持的分辨率，1024px 级别
+Sampler: [作者推荐] Euler a
+Scheduler: 未给出
+Steps: [起始测试值] 25（使用指南参考，非强制固定值）
+CFG: 未给出固定值（社区参考 5~7，待核实）
+Parameter Source: 身份/VAE 记录 [已核实]；Clip Skip/采样器/分辨率 [作者推荐]；步数 25 [起始测试值]；CFG/调度器 [待核实]
+Source Note: 训练标签体系（不代表每次全加）：source_pony, source_furry, source_cartoon, source_anime, rating_safe, rating_questionable, rating_explicit。
+
+[MODEL BEHAVIOR]
+Strengths: Pony 系通用底座，标签生态完善
+Known Weaknesses: 纯写实人像非其定位；CFG 官方固定值与调度器未给出
+NSFW / Mature Content Statement: Pony 谱系普遍支持成熟向；属谱系倾向，非输出保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial
+Verified locally: no
+Uncertain fields: 固定 CFG、Scheduler、完整负面范例
+Last Updated: 2026-11-07

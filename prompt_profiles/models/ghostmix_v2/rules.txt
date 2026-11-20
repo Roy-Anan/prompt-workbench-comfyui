@@ -1,0 +1,62 @@
+# MODEL PROFILE — GhostMix V2.0
+
+[IDENTITY]
+Display Name: GhostMix V2.0
+Exact Checkpoint Filename: GhostMix_v2.0.safetensors
+Version: V2.0
+Author / Model Card: civitai.com/models/36520/ghostmix（HF 镜像指向该 Civitai 模型页）
+File Size: 2288.9 MB
+SHA256: E3EDB8A26F44DFDDC124129004B5DED3378BE974B8D3BF82F43B9660D416D3D1
+Identity Note: [镜像核实] Hugging Face 镜像记录文件名 GhostMix-V2.0-fp16-BakedVAE.safetensors，文件名与本地不同，但 SHA256 与本地完全一致，可确认文件内容相同、对应 GhostMix V2.0。HF 文件记录属镜像证据，不等于作者亲自发布的模型卡。
+
+[ARCHITECTURE]
+Base Architecture: [镜像核实] SD1.5（哈希一致）
+Model Type: [待核实]
+VAE: 镜像文件名含 BakedVAE，提示可能已内置 VAE；未经作者版本页确认，暂记 [待核实]，不直接当作作者声明。
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 简洁标签 + 主体/动作/背景分段（社区经验，待官方核实）
+Author Positive Example: 未找到官方完整范例
+Author Negative Example: 未找到官方完整范例；社区建议 ng_deepnegative_v1_75t、easynegative（非作者推荐）
+
+[GENERATION SETTINGS]
+Resolution: 未给出（社区参考 512×768，待核实）
+Sampler: 未给出（社区参考 DPM++ 系列，待核实）
+Scheduler: 未给出
+Steps: 未给出（社区参考 20~30，待核实）
+CFG: 未给出（社区参考 5~7，待核实）
+Parameter Source: 身份/底座 [镜像核实]；VAE 内置为镜像文件名推断 [待核实]；采样参数与范例均 [待核实]；括号内为社区经验
+Source Note: 身份经 HF 镜像哈希对照确认；作者原始页面的采样参数、Clip Skip、触发词、完整正负面范例仍未取得。
+
+[MODEL BEHAVIOR]
+Strengths: 半写实与插画混合质感倾向（社区评价）
+Known Weaknesses: 采样参数未经官方确认
+NSFW / Mature Content Statement: 已读来源无成熟向声明；不作能力保证。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial（身份经镜像哈希核实；作者参数未核实）
+Verified locally: no
+Uncertain fields: 作者确认的 VAE、Clip Skip、官方采样器/调度器/步数/CFG/分辨率、触发词、完整范例
+Last Updated: 2026-11-07

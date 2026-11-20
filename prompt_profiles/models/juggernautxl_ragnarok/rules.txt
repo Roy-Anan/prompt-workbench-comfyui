@@ -1,0 +1,65 @@
+# MODEL PROFILE — JuggernautXL Ragnarok
+
+[IDENTITY]
+Display Name: Juggernaut XL Ragnarok
+Exact Checkpoint Filename: juggernautXL_ragnarokBy.safetensors
+Version: Ragnarok
+Author / Model Card: civitaiarchive.com/models/133005?modelVersionId=1759168（CivArchive 镜像，非作者官网）
+File Size: 6776.2 MB
+SHA256: DD08FA32F98D05A2443CA1419E46DF1575A0811F6E3B246D9DD47FF20F5EB66A
+Identity Note: [镜像核实] 找到相同 SHA256 的 Hugging Face 文件记录与 Civitai 版本镜像记录，哈希一致，可确认本地文件即 Juggernaut XL Ragnarok 对应文件。
+
+[ARCHITECTURE]
+Base Architecture: [作者推荐] SDXL
+Model Type: [作者推荐] Checkpoint
+VAE: [作者推荐] 内置（baked-in）
+Clip Skip: 未给出
+Trigger Words: 未给出
+
+[PROMPT STYLE]
+Preferred Prompt Format: 自然语言 + 摄影描述（写实人像）
+Author Positive Example: 完整画廊正面范例未取得
+Author Negative Example: 作者建议负面提示词先留空，再逐渐添加不想出现的内容；未提供固定完整负面范例
+Source Note: 不要把 Juggernaut XI 的示例或指南参数套用到 Ragnarok；两者是不同版本。
+
+[GENERATION SETTINGS]
+Resolution: [作者推荐] 832×1216；其他 SDXL 分辨率也可
+Sampler: [作者推荐] DPM++ 2M SDE
+Scheduler: 未给出
+Steps: [作者推荐] 30~40
+CFG: [作者推荐] 3~6
+Parameter Source: 身份 [镜像核实]；底座/类型/VAE/分辨率/采样器/步数/CFG [作者推荐]；Scheduler/Clip Skip/范例 [未给出]
+派系标签: Juggernaut 系
+画风标签: 写实人像（面孔倾向待核实）
+
+[MODEL BEHAVIOR]
+Strengths: Juggernaut 谱系写实向（作者定位）；值得单独实测
+Known Weaknesses: 面孔倾向、完整范例未取得
+Known Biases / Frequent Unwanted Elements: 待实测
+NSFW / Mature Content Statement: 作者训练说明：曾在 SDXL 上用 Booru tags 训练另一组 NSFW 数据集，随后将两组 NSFW 数据合并进写实模型。属作者对训练过程的单方说明，不保证每一种输出效果。
+
+[LOCAL WORKFLOW]
+ComfyUI Version: 待填写
+Checkpoint Loader: 待填写
+VAE Node / Setting: 待填写
+LoRAs Used: 待填写
+ControlNet / IPAdapter: 待填写
+Other Nodes: 待填写
+VRAM Mode: 待填写
+Working Resolution: 待填写
+Batch Size: 待填写
+
+[LOCAL TEST FEEDBACK]
+（暂无本机实测记录）
+Test Date: 待填写
+Seed: 待填写
+Observed Result: 待填写
+What Worked: 待填写
+What Failed: 待填写
+Next Variable to Test: 待填写
+
+[CONFIDENCE]
+Verified by author documentation: partial（身份镜像核实；作者设置已摘录，范例与部分字段未取得）
+Verified locally: no
+Uncertain fields: Clip Skip、Scheduler、完整画廊正负面范例、面孔倾向、本机实测表现
+Last Updated: 2026-11-07

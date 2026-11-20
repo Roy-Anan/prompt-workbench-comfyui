@@ -46,6 +46,9 @@ class WorkbenchPromptCandidate:
             },
             "optional": {
                 "token": ("STRING", {"default": ""}),
+                # "auto" lets the backend match a local Profile by checkpoint
+                # / architecture; otherwise enter a backend Profile id manually.
+                "prompt_profile": ("STRING", {"default": "auto", "multiline": False}),
                 "temperature": ("FLOAT", {"default": _UNSET, "min": -1.0, "max": 2.0, "step": 0.05}),
                 "top_p": ("FLOAT", {"default": _UNSET, "min": -1.0, "max": 1.0, "step": 0.05}),
                 "num_ctx": ("INT", {"default": -1, "min": -1, "max": 131_072}),
@@ -68,6 +71,7 @@ class WorkbenchPromptCandidate:
         temperature=_UNSET,
         top_p=_UNSET,
         num_ctx=-1,
+        prompt_profile="auto",
     ):
         workflow_id = (workflow_id or "").strip()
         model = (model or "").strip()
@@ -79,6 +83,9 @@ class WorkbenchPromptCandidate:
         body: dict[str, Any] = {"model": model, "mode": mode}
         if (task or "").strip():
             body["task"] = task.strip()
+        profile_choice = (prompt_profile or "").strip()
+        if profile_choice and profile_choice != "auto":
+            body["prompt_profile"] = profile_choice
         if temperature >= 0:
             body["temperature"] = temperature
         if top_p >= 0:
@@ -100,6 +107,14 @@ class WorkbenchPromptCandidate:
 
         mode_label = MODE_LABELS.get(mode, mode)
         header = f"[{mode_label}｜模型 {data.get('model') or model}]"
+        profile_name = data.get("selected_profile_name")
+        if profile_name:
+            source = data.get("profile_match_source") or ""
+            header += f"｜Profile {profile_name}"
+            if source:
+                header += f"（{source}）"
+        elif data.get("fallback_reason"):
+            header += "｜Profile 回退通用规则"
         return (f"{header}\n{candidates[0]}", json.dumps(data, ensure_ascii=False))
 
 
