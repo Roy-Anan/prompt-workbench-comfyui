@@ -3796,3 +3796,29 @@
 
 - 隔离实例采集完成后停止并核验 17894 端口释放；正式实例默认 17890 未受影响。
 
+## 157. ComfyUI 外部扩展骨架落地与新远端仓库（2026-11-20）
+
+### 157.1 远端仓库
+
+- 新建公开仓库 `Roy-Anan/prompt-workbench-comfyui`（https://github.com/Roy-Anan/prompt-workbench-comfyui ），本地 `origin` 指向该仓；早期草稿仓 `ComfyUI-Prompt-Workbench` 与误建空私有仓 `Prompt-Workbench` 保留为 `legacy-origin`/留档，不再推送。
+- `main` 快进到 `dev` 同点 `072fb38`，`main`/`dev` 均已推送到新仓；`userdata/`、节点令牌、虚拟环境与前端产物均不入库。
+
+### 157.2 外部扩展（`comfyui_extension/`，不复制进整合包）
+
+- 挂载链路：`extra_paths.yaml` 以相对 `base_path` 把 `workbench/` 包目录追加进 ComfyUI `custom_nodes` 扫描列表；不改整合包源码。
+- 节点：
+  - `WorkbenchRuleQuery`（工作台规则查询）：只读拉取 `/api/rules`，输出规则文本与原始 JSON。
+  - `WorkbenchReleaseVram`（工作台释放显存/卸载LLM）：经后端 `POST /api/system/release-vram` 复用现有 best-effort 卸载链路，返回卸载摘要与原始 JSON；带 `enabled` 开关，未启用不调用后端。
+- 侧边栏：`web/workbench_panel.js` 注册一个工作台页签，探针 `/api/health` 展示连通状态与版本，拉取免鉴权只读 `/api/overview` 展示规则/工作流/草稿/素材/历史计数，并提供跳转完整工作台的入口；草稿/素材/LoRA/规则编辑仍在工作台页面。
+- 概览端点：`GET /api/overview` 与 health 同级免鉴权（回环），只返回非敏感计数（rules/workflows/drafts/assets/history）与版本，不暴露 Prompt 文本、模型快照、备注或文件路径；数据源复用现有规则库、工作流/草稿存储、素材库与历史表。
+- 节点专用凭据：后端首次启动在 `userdata/settings/node_token.json` 持久化节点令牌（不入库、跨重启复用）；客户端按「节点输入框 → 环境变量 `WORKBENCH_SESSION_TOKEN` → 凭据文件」取令牌。令牌默认只读（仅 GET/HEAD/OPTIONS），窄白名单仅放行 `release-vram`；其余写请求 403。
+- CORS 白名单补充 ComfyUI 回环来源 `127.0.0.1:8188` / `localhost:8188`，供侧边栏读取免鉴权健康探针。
+
+### 157.3 验证与未验证项
+
+- 后端全量 **382 passed**（含节点令牌落盘/复用、只读放行、写操作 403、白名单放行、客户端优先级与兜底、8188 来源 CORS、overview 免鉴权计数与回环来源放行）。
+- 用整合包 Python 冒烟：两个节点均注册成功，中文名、分类、输出类型与 `web/` 目录就位；凭据文件默认路径解析到仓库 `userdata/settings/node_token.json`；后端不可达时节点返回友好错误不崩画布。
+- **未真机验证**：ComfyUI 前端侧边栏页签的实际渲染与交互（本轮未启动 ComfyUI 前端实测）；`workbench_panel.js` 已通过 ESM 语法校验。
+- backlog：LLM 候选节点依赖后端工作流上下文（workflow_id 规则/提示词/术语），与画布桥同属后期阶段；面板内只读规则/草稿列表需先打通浏览器只读会话。
+
+

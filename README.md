@@ -54,6 +54,7 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
 -   [维护与智能体交接手册](docs/MAINTENANCE_AND_AGENT_HANDOFF.md)
 -   [ADR-0001 技术选型决策（已废弃，历史记录）](docs/decisions/ADR-0001-TECH-STACK.md)
 -   [ADR-0002 本机 Web 运行时（免安装）](docs/decisions/ADR-0002-LOCAL-WEB-RUNTIME.md)
+-   [ComfyUI 外部扩展说明](comfyui_extension/README.md)
 -   [上传到 GitHub 的操作说明](UPLOAD_GUIDE.md)
 
 ## 用户设备参考
