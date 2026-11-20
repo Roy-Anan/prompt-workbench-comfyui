@@ -35,6 +35,15 @@ def test_chat_injects_default_num_predict(monkeypatch):
     assert captured["body"]["options"]["num_predict"] == llm_client.MAX_PREDICT_TOKENS
 
 
+def test_chat_disables_thinking_channel(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(llm_client, "urlopen", _capture_urlopen(captured))
+
+    llm_client.chat("http://127.0.0.1:11434", "m", [{"role": "user", "content": "x"}])
+
+    assert captured["body"]["think"] is False
+
+
 def test_chat_respects_explicit_num_predict(monkeypatch):
     captured: dict = {}
     monkeypatch.setattr(llm_client, "urlopen", _capture_urlopen(captured))

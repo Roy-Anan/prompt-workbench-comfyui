@@ -4177,6 +4177,33 @@
   list` 直连本机正常。后端 Ollama/ComfyUI 地址取自 `settings.json` 回环，不读该
   环境变量；Machine 级本就为空。
 
+### 165.5 新增去审查 8B 模型 qwen3-heretic 导入与 thinking 关闭（2026-11-20）
+
+- 目标模型：Ollama 命名空间 `R4C3R/qwen3-8b-heretic:q4_k_m`，对应 HF 仓库
+  `saidutta69/Qwen3-8B-heretic`，基座 `Qwen/Qwen3-8B`，Q4_K_M，arch `qwen3`，
+  8.2B，context 40960，capabilities `tools / thinking / completion`；为 directional
+  ablation（abliteration/decensored）变体，支持 thinking/non-thinking 双模式。
+- 下载与一致性：经 `hf-mirror.com` 镜像取 `Qwen3-8B-heretic-Q4_K_M.gguf`，
+  **5,027,784,288 字节**，与 Ollama registry 权重层 `a0bed9f3…` 逐字节一致；
+  未取 Q5_K_M / Q6_K / Q8_0 / F16 及 safetensors 分片。镜像稳态约 6 MB/s。
+- 导入：本地标签 `qwen3-heretic:q4_k_m`，裸底模（Modelfile 仅 `FROM`，不固化
+  SYSTEM / PARAMETER；聊天模板取 GGUF 内嵌 `gguf_chat_template`）。候选规则由后端
+  每次经 system 消息注入，不依赖模型自带固化层。权重 blob `a0bed9f3…` 落
+  `D:\AI\MODELS\blobs`，5,027,784,288 字节；暂存 GGUF 与临时 Modelfile 核验后
+  已清理。
+- 代码改动：`llm_client.chat` 请求体新增 `"think": False`，关闭 thinking 模型内置
+  思维链——否则思考段先耗尽 `num_predict` 额度会把可见正文挤空，并拖慢响应；
+  不支持该字段的模型/服务忽略此标记。补回归用例
+  `test_chat_disables_thinking_channel`（断言 `body["think"] is False`）。
+- 真机核验：`/api/ollama/models` 列出新模型，`model_details` 标注 `8.2B`；对验收
+  工作流跑一轮 draft 候选，返回 Positive / Negative 两段英文标签，未崩、未超长、
+  无 think 文本混入；候选后 `keep_alive:0` 卸载，`ollama ps` 为空，未驻留显存。
+- 回归：后端 412 passed，仅两个已知环境型失败（stopper pid 残留、sidebar 在线
+  LoRA 探测）；本轮无前端改动。
+- 遗留观察：新模型为普通 Qwen3-8B（非 VL）。候选格式遵循度上仍有正向混入否定式、
+  堆质量词的现象，由后端标签去重/清洗兜底；若后续格式漂移严重，可再复刻 v1 模式
+  叠加助手规则层做定制标签，当前先按裸模型使用。
+
 
 
 

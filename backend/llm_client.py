@@ -47,6 +47,12 @@ def chat(
         # Release the model from VRAM as soon as this round finishes instead
         # of leaving it resident for the server default keep-alive window.
         "keep_alive": 0,
+        # Candidates are short tag/phrase output: disable the built-in
+        # reasoning channel on thinking models (e.g. Qwen3) so the prediction
+        # budget is not consumed by a hidden chain-of-thought that leaves the
+        # visible answer empty. Models/servers that do not support this flag
+        # ignore it.
+        "think": False,
     }
     opts = dict(options or {})
     opts.setdefault("num_predict", MAX_PREDICT_TOKENS)
