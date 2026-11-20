@@ -156,6 +156,11 @@ type CandidateResponse = {
   rule_status: string;
   conflicts: unknown[];
   unknown: unknown[];
+  persona_id?: string | null;
+  persona_name?: string | null;
+  persona_kind?: string | null;
+  genre?: string | null;
+  style?: string | null;
   selected_profile_id?: string | null;
   selected_profile_name?: string | null;
   profile_match_source?: string;
@@ -163,8 +168,24 @@ type CandidateResponse = {
   fallback_reason?: string | null;
   profile_warning?: string | null;
   architecture?: string | null;
-  system_prompt_layers?: { core: boolean; profile: boolean; workflow: boolean };
+  system_prompt_layers?: {
+    core: boolean;
+    profile: boolean;
+    workflow: boolean;
+    genre: boolean;
+    style: boolean;
+  };
 };
+type Persona = {
+  id: string;
+  display_name: string;
+  kind: "prompt" | "writing" | string;
+  enabled?: boolean;
+  exists?: boolean;
+};
+type LayerItem = { id: string; display_name: string; exists?: boolean };
+type PersonasResponse = { items: Persona[] };
+type LayersResponse = { items: LayerItem[] };
 type PromptProfile = {
   id: string;
   display_name: string;
@@ -698,6 +719,18 @@ export default function WorkflowWorkbench({
   const [selectedProfile, setSelectedProfile] = useState(() =>
     readStoredParam("workbench.selectedProfile") || "auto",
   );
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [selectedPersona, setSelectedPersona] = useState(() =>
+    readStoredParam("workbench.selectedPersona") || "none",
+  );
+  const [genres, setGenres] = useState<LayerItem[]>([]);
+  const [selectedGenre, setSelectedGenre] = useState(
+    () => readStoredParam("workbench.selectedGenre") || "",
+  );
+  const [styles, setStyles] = useState<LayerItem[]>([]);
+  const [selectedStyle, setSelectedStyle] = useState(
+    () => readStoredParam("workbench.selectedStyle") || "",
+  );
   const [taskText, setTaskText] = useState(() =>
     readStoredParam("workbench.candidateTask"),
   );
@@ -733,6 +766,12 @@ export default function WorkflowWorkbench({
   function candidateScopeOf(mode: string): CandidateScope {
     return mode === "negative" ? "negative" : "positive";
   }
+  const currentPersona = personas.find((p) => p.id === selectedPersona);
+  const personaKind: string = currentPersona?.kind ?? "generic";
+  const isWritingIdentity = personaKind === "writing";
+  const candidateModeOptions = CANDIDATE_MODE_OPTIONS.filter(
+    (opt) => !isWritingIdentity || opt.value !== "negative",
+  );
   const [importedPrompt, setImportedPrompt] = useState<PromptImport | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -791,6 +830,9 @@ export default function WorkflowWorkbench({
   useEffect(() => {
     void loadModels();
     void loadProfiles();
+    void loadPersonas();
+    void loadGenres();
+    void loadStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -1029,6 +1071,38 @@ export default function WorkflowWorkbench({
       setProfiles([]);
     }
   }
+  async function loadPersonas() {
+    try {
+      const result = await apiGet<PersonasResponse>("/api/personas");
+      const items = result.items ?? [];
+      setPersonas(items);
+      // First visit: default to the bundled prompt assistant so the workbench
+      // keeps its original prompt-polishing behaviour; the user can switch to
+      // a writing persona or the bare-model ("none") slot.
+      const remembered = readStoredParam("workbench.selectedPersona");
+      if (!remembered && items.some((p) => p.id === "prompt_assistant")) {
+        setSelectedPersona("prompt_assistant");
+      }
+    } catch {
+      setPersonas([]);
+    }
+  }
+  async function loadGenres() {
+    try {
+      const result = await apiGet<LayersResponse>("/api/genres");
+      setGenres(result.items ?? []);
+    } catch {
+      setGenres([]);
+    }
+  }
+  async function loadStyles() {
+    try {
+      const result = await apiGet<LayersResponse>("/api/styles");
+      setStyles(result.items ?? []);
+    } catch {
+      setStyles([]);
+    }
+  }
   async function loadModels() {
     try {
       const result = await apiGet<OllamaModelsResponse>("/api/ollama/models");
@@ -1052,10 +1126,14 @@ export default function WorkflowWorkbench({
     if (!workflowId || !selectedModel) return;
     setCandidateBusy(true);
     try {
+      // Writing identities have no negative-prompt mode; fall back to draft if
+      // a remembered negative mode is still selected after switching identity.
+      const effectiveMode =
+        isWritingIdentity && candidateMode === "negative" ? "draft" : candidateMode;
       const body: Record<string, unknown> = {
         model: selectedModel,
         task: taskText.trim() || null,
-        mode: candidateMode,
+        mode: effectiveMode,
       };
       const temperature = parseOptionalFloat(candidateTemp, 0, 2);
       const topP = parseOptionalFloat(candidateTopP, 0, 1);
@@ -1064,10 +1142,23 @@ export default function WorkflowWorkbench({
       if (topP !== null) body.top_p = topP;
       if (numCtx !== null) body.num_ctx = numCtx;
       if (lockedFragments.length) body.locked_fragments = lockedFragments;
-      const profileChoice = (selectedProfile || "auto").trim();
-      if (profileChoice && profileChoice !== "auto") {
-        body.prompt_profile = profileChoice;
+
+      const personaChoice = (selectedPersona || "none").trim();
+      body.persona = personaChoice || "none";
+
+      // Profile slot applies to prompt-class identities only. Three states:
+      // auto (default, omitted), explicit id, or none (skip the layer).
+      if (!isWritingIdentity) {
+        const profileChoice = (selectedProfile || "auto").trim();
+        if (profileChoice === "" || profileChoice === "none") {
+          body.prompt_profile = "none";
+        } else if (profileChoice !== "auto") {
+          body.prompt_profile = profileChoice;
+        }
       }
+      if (selectedGenre.trim()) body.genre = selectedGenre.trim();
+      if (selectedStyle.trim()) body.style = selectedStyle.trim();
+
       const result = await apiPost<CandidateResponse>(
         `/api/workflows/${workflowId}/prompt/candidates`,
         body,
@@ -1076,17 +1167,19 @@ export default function WorkflowWorkbench({
       if (text) {
         const item: CandidateItem = {
           text,
-          mode: candidateMode,
-          scope: candidateScopeOf(candidateMode),
+          mode: effectiveMode,
+          scope: candidateScopeOf(effectiveMode),
         };
         const nextIndex = candidates.length;
         setCandidates((prev) => [...prev, item]);
         setActiveCandidate(nextIndex);
         setCompareOther(null);
       }
-      const profileNote = result.selected_profile_name
-        ? `，Profile：${result.selected_profile_name}（${result.profile_match_source || "auto"}）`
-        : `，Profile 回退通用规则${result.fallback_reason ? `（${result.fallback_reason}）` : ""}`;
+      const profileNote = isWritingIdentity
+        ? ""
+        : result.selected_profile_name
+          ? `，Profile：${result.selected_profile_name}（${result.profile_match_source || "auto"}）`
+          : `，Profile 回退通用规则${result.fallback_reason ? `（${result.fallback_reason}）` : ""}`;
       const warnNote = result.profile_warning ? `；${result.profile_warning}` : "";
       setMessage(`已生成候选（规则状态：${result.rule_status}）${profileNote}${warnNote}，采用前请核对。`);
     } catch (error) {
@@ -2384,7 +2477,9 @@ export default function WorkflowWorkbench({
               <div className="candidate-heading">
                 <h3 id="step-05">提示词候选</h3>
                 <p className="candidate-subtitle">
-                  本地 LLM 起草或润色提示词，模型专用规则按 checkpoint 与架构自动匹配
+                  {isWritingIdentity
+                    ? "本地 LLM 按身份、题材与文风生成写作内容"
+                    : "本地 LLM 起草或润色提示词，模型专用规则按 checkpoint 与架构自动匹配"}
                 </p>
               </div>
               {!modelsOnline ? (
@@ -2432,36 +2527,104 @@ export default function WorkflowWorkbench({
                         })}
                       </select>
                       <select
-                        value={selectedProfile}
+                        value={selectedPersona}
                         disabled={busy || candidateBusy}
                         onChange={(event) => {
-                          setSelectedProfile(event.target.value);
+                          setSelectedPersona(event.target.value);
                           persistParam(
-                            "workbench.selectedProfile",
+                            "workbench.selectedPersona",
                             event.target.value,
                           );
                         }}
-                        title="模型专用规则 Profile；自动匹配按 checkpoint 文件名与架构选择"
+                        title="LLM 身份定位；裸模型表示不注入身份系统提示词"
                       >
-                        <option value="auto">自动匹配 Profile</option>
-                        {profiles.map((profile) => {
-                          const arch = profile.architecture
-                            ? `｜${profile.architecture}`
-                            : "";
-                          const stateTag = profile.enabled ? "" : "（已停用）";
-                          return (
-                            <option
-                              key={profile.id}
-                              value={profile.id}
-                              disabled={!profile.enabled}
-                            >
-                              {profile.display_name}
-                              {arch}
-                              {stateTag}
-                            </option>
-                          );
-                        })}
+                        <option value="none">裸模型（不注入身份）</option>
+                        {personas.map((persona) => (
+                          <option
+                            key={persona.id}
+                            value={persona.id}
+                            disabled={persona.enabled === false}
+                          >
+                            {persona.display_name}
+                          </option>
+                        ))}
                       </select>
+                      {!isWritingIdentity && (
+                        <select
+                          value={selectedProfile}
+                          disabled={busy || candidateBusy}
+                          onChange={(event) => {
+                            setSelectedProfile(event.target.value);
+                            persistParam(
+                              "workbench.selectedProfile",
+                              event.target.value,
+                            );
+                          }}
+                          title="模型专用规则 Profile；自动匹配按 checkpoint 文件名与架构选择"
+                        >
+                          <option value="auto">自动匹配 Profile</option>
+                          <option value="none">不使用规则套</option>
+                          {profiles.map((profile) => {
+                            const arch = profile.architecture
+                              ? `｜${profile.architecture}`
+                              : "";
+                            const stateTag = profile.enabled ? "" : "（已停用）";
+                            return (
+                              <option
+                                key={profile.id}
+                                value={profile.id}
+                                disabled={!profile.enabled}
+                              >
+                                {profile.display_name}
+                                {arch}
+                                {stateTag}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      {isWritingIdentity && (
+                        <>
+                          <select
+                            value={selectedGenre}
+                            disabled={busy || candidateBusy}
+                            onChange={(event) => {
+                              setSelectedGenre(event.target.value);
+                              persistParam(
+                                "workbench.selectedGenre",
+                                event.target.value,
+                              );
+                            }}
+                            title="写作题材设定"
+                          >
+                            <option value="">不指定题材</option>
+                            {genres.map((genre) => (
+                              <option key={genre.id} value={genre.id}>
+                                {genre.display_name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={selectedStyle}
+                            disabled={busy || candidateBusy}
+                            onChange={(event) => {
+                              setSelectedStyle(event.target.value);
+                              persistParam(
+                                "workbench.selectedStyle",
+                                event.target.value,
+                              );
+                            }}
+                            title="写作文风"
+                          >
+                            <option value="">不指定文风</option>
+                            {styles.map((style) => (
+                              <option key={style.id} value={style.id}>
+                                {style.display_name}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
                       <select
                         value={candidateMode}
                         disabled={busy || candidateBusy}
@@ -2473,7 +2636,7 @@ export default function WorkflowWorkbench({
                           );
                         }}
                       >
-                        {CANDIDATE_MODE_OPTIONS.map((opt) => (
+                        {candidateModeOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>

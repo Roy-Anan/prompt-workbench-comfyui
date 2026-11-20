@@ -197,14 +197,16 @@ def prompt_candidates(
     base_url: str = "",
     token: str = "",
 ) -> dict[str, Any]:
-    """Ask the backend to produce a local-LLM prompt candidate for a workflow.
+    """Ask the backend to produce a local-LLM prompt candidate.
 
-    The backend resolves the rule context, existing prompts and protected terms
-    server-side; the suggestion is returned but never written back to a draft.
+    When ``workflow_id`` is empty the request goes to the standalone endpoint,
+    so the same node can run a bare-model / writing round without a bound
+    workflow. The suggestion is returned but never written back to a draft.
     """
-    return _post(
-        f"/api/workflows/{workflow_id}/prompt/candidates",
-        base_url,
-        token,
-        body,
+    wid = (workflow_id or "").strip()
+    path = (
+        "/api/workflows/prompt/candidates"
+        if not wid
+        else f"/api/workflows/{wid}/prompt/candidates"
     )
+    return _post(path, base_url, token, body)

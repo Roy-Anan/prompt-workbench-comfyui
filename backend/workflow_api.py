@@ -14,6 +14,7 @@ import generation_history
 import llm_client
 import model_identity
 import prompt_profiles
+import prompt_personas
 import rule_compare
 import rule_prompt
 import rule_store
@@ -144,6 +145,17 @@ class PromptCandidateRequest(BaseModel):
     num_ctx: int | None = Field(default=None, ge=1024, le=131_072)
     locked_fragments: list[str] | None = Field(default=None)
     prompt_profile: str | None = Field(default=None, max_length=120)
+    # Selectable identity / system prompt. None (absent) keeps the legacy
+    # Core fallback for old callers; "" / "none" means bare model (no identity
+    # layer); any other value resolves to a registered persona.
+    persona: str | None = Field(default=None, max_length=120)
+    # Writing-class layers; ignored for prompt-class identities.
+    genre: str | None = Field(default=None, max_length=120)
+    style: str | None = Field(default=None, max_length=120)
+    # Explicit existing prompts passed from the node / panel; take precedence
+    # over the working copy when present.
+    positive_in: str | None = Field(default=None, max_length=2000)
+    negative_in: str | None = Field(default=None, max_length=2000)
 
     @field_validator("locked_fragments")
     @classmethod
@@ -160,7 +172,9 @@ class PromptCandidateRequest(BaseModel):
     @field_validator("mode")
     @classmethod
     def _mode_known(cls, value: str) -> str:
-        normalized = (value or "draft").strip() or "draft"
+        normalized = (value or "").strip()
+        if normalized in ("", "none"):
+            return ""
         if normalized not in CANDIDATE_MODES:
             raise ValueError(f"unknown mode: {normalized}")
         return normalized
@@ -343,6 +357,8 @@ def _user_message(
     mode: str = "draft",
     protected_terms: list[str] | None = None,
     locked_fragments: list[str] | None = None,
+    positive_in: str | None = None,
+    negative_in: str | None = None,
 ) -> str:
     by_role: dict[str, list[str]] = {"positive": [], "negative": []}
     for item in working_prompts:
@@ -350,12 +366,18 @@ def _user_message(
         text = item.get("text")
         if role in by_role and isinstance(text, str) and text.strip():
             by_role[role].append(text.strip())
+    if positive_in and positive_in.strip():
+        by_role["positive"].append(positive_in.strip())
+    if negative_in and negative_in.strip():
+        by_role["negative"].append(negative_in.strip())
 
-    lines: list[str] = ["当前工作流现有 Prompt："]
-    if by_role["positive"]:
-        lines.append("正向：" + " / ".join(by_role["positive"]))
-    if by_role["negative"]:
-        lines.append("负向：" + " / ".join(by_role["negative"]))
+    lines: list[str] = []
+    if by_role["positive"] or by_role["negative"]:
+        lines.append("当前工作流现有 Prompt：")
+        if by_role["positive"]:
+            lines.append("正向：" + " / ".join(by_role["positive"]))
+        if by_role["negative"]:
+            lines.append("负向：" + " / ".join(by_role["negative"]))
     if task and task.strip():
         lines.append(f"任务要求：{task.strip()}")
     if protected_terms:
@@ -368,8 +390,8 @@ def _user_message(
             "以下片段必须原样保留，不得改写、删除、翻译或替换："
             + "、".join(locked_fragments)
         )
-    instruction = CANDIDATE_MODES.get(mode, CANDIDATE_MODES["draft"])["instruction"]
-    lines.append(instruction)
+    if mode and mode in CANDIDATE_MODES:
+        lines.append(CANDIDATE_MODES[mode]["instruction"])
     return "\n".join(lines)
 @router.get("")
 def list_workflows():
@@ -680,72 +702,133 @@ def workflow_rule_prompt(workflow_id: str):
     return rule_prompt.build_prompt_context(context)
 
 
-@router.post("/{workflow_id}/prompt/candidates")
-def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
-    """Ask the local Ollama model for a prompt candidate for this workflow.
+def _resolve_identity(payload: PromptCandidateRequest) -> tuple[str, dict[str, Any] | None, str]:
+    """Resolve the identity (system prompt) layer.
 
-    Only the trimmed rule context already resolved for this workflow is sent;
-    unrelated rules are never included. The response is a candidate text only:
-    it is not written back to the workflow, and the working draft is left
-    untouched. A local-model failure returns a conservative 502 with no
-    fabricated candidate; there is no cloud fallback.
+    Returns ``(identity_text, persona_meta, persona_kind)``.
+
+    - ``persona`` absent (None): legacy fallback to the bundled Core generic
+      rules, treated as prompt class (keeps old callers working).
+    - ``""`` / ``"none"``: bare model, no identity layer injected.
+    - other value: resolve a registered persona from ``personas/``.
     """
-    try:
-        workflow = store().get_workflow(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        _raise_api_error(exc)
+    raw = payload.persona
+    if raw is None:
+        return prompt_profiles.core_prompt_text(), None, "prompt"
+    cleaned = raw.strip()
+    if cleaned == "" or cleaned.lower() == "none":
+        return "", None, "generic"
+    entry = prompt_personas.get_persona(cleaned)
+    if entry is None:
+        return "", {"id": cleaned, "found": False}, "generic"
+    meta = {
+        "id": entry["id"],
+        "display_name": entry.get("display_name") or entry["id"],
+        "kind": entry.get("kind", "prompt"),
+    }
+    return entry.get("system", "") or "", meta, entry.get("kind", "prompt")
 
-    report = workflow.get("report", {})
-    checkpoint = _checkpoint_filename(report)
-    if checkpoint:
-        with model_identity.connect(_database_path()) as connection:
-            rule_store.ensure_schema(connection)
-            context = rule_store.context_for_checkpoint(connection, checkpoint)
-    else:
-        context = _unregistered_context()
+
+def _generate_candidate(
+    workflow_id: str | None, payload: PromptCandidateRequest
+) -> dict[str, Any]:
+    """Assemble layers, call the local LLM and return one candidate.
+
+    The candidate is returned to the caller but never written back to the
+    workflow or draft. A local-model failure returns a conservative 502 with
+    no fabricated candidate; there is no cloud fallback.
+    """
+    workflow: dict[str, Any] | None = None
+    checkpoint: str | None = None
+    context = _unregistered_context()
     rule_payload = rule_prompt.build_prompt_context(context)
+    working_prompts: list[dict[str, Any]] = []
 
-    # Local three-layer composition: Core generic rules -> Model-specific
-    # Profile -> workflow dynamic rules. No remote lookup or weight hashing.
-    profile_choice = prompt_profiles.match_profile(
-        checkpoint,
-        context.get("architecture_label"),
-        context.get("architecture_family"),
-        manual=payload.prompt_profile,
-    )
+    if workflow_id and workflow_id.strip():
+        try:
+            workflow = store().get_workflow(workflow_id.strip())
+        except (WorkflowError, FileNotFoundError, OSError) as exc:
+            _raise_api_error(exc)
+        report = workflow.get("report", {})
+        checkpoint = _checkpoint_filename(report)
+        if checkpoint:
+            with model_identity.connect(_database_path()) as connection:
+                rule_store.ensure_schema(connection)
+                context = rule_store.context_for_checkpoint(connection, checkpoint)
+        rule_payload = rule_prompt.build_prompt_context(context)
+        working_prompts = workflow.get("working_prompts", [])
+
+    identity_text, persona_meta, persona_kind = _resolve_identity(payload)
+
+    # Profile / model-specific rules: prompt class only. Three states:
+    # empty / "none" = skip, "auto" = match by checkpoint/architecture,
+    # other value = explicit profile id.
+    profile_choice: dict[str, Any] | None = None
     profile_rules = ""
     profile_meta: dict[str, Any] | None = None
-    if profile_choice["profile_id"]:
-        full = prompt_profiles.get_profile(profile_choice["profile_id"])
-        if full:
-            profile_rules = full.get("rules", "") or ""
-            profile_meta = {
-                "id": full.get("id"),
-                "display_name": full.get("display_name"),
-                "version": full.get("version"),
-                "content_hash": full.get("content_hash"),
-                "architecture": full.get("architecture"),
-            }
-
-    core_text = prompt_profiles.core_prompt_text()
-    workflow_rules_text = _rules_system_message(rule_payload)
-    system_content = prompt_profiles.compose_system_prompt(
-        core_text, profile_rules, workflow_rules_text
+    profile_raw = (payload.prompt_profile or "auto").strip()
+    skip_profile = (
+        persona_kind == "writing"
+        or profile_raw == ""
+        or profile_raw.lower() == "none"
     )
+    if not skip_profile:
+        manual = None if profile_raw == "auto" else profile_raw
+        profile_choice = prompt_profiles.match_profile(
+            checkpoint,
+            context.get("architecture_label"),
+            context.get("architecture_family"),
+            manual=manual,
+        )
+        if profile_choice["profile_id"]:
+            full = prompt_profiles.get_profile(profile_choice["profile_id"])
+            if full:
+                profile_rules = full.get("rules", "") or ""
+                profile_meta = {
+                    "id": full.get("id"),
+                    "display_name": full.get("display_name"),
+                    "version": full.get("version"),
+                    "content_hash": full.get("content_hash"),
+                    "architecture": full.get("architecture"),
+                }
 
-    messages = [
-        {"role": "system", "content": system_content},
+    # Writing-class layers (genre / style); harmless when empty.
+    genre_text = prompt_personas.get_genre(payload.genre) if payload.genre else ""
+    style_text = prompt_personas.get_style(payload.style) if payload.style else ""
+
+    workflow_rules_text = _rules_system_message(rule_payload) if workflow_id else ""
+
+    system_content = prompt_profiles.compose_system_prompt(
+        identity_text, profile_rules, workflow_rules_text
+    )
+    extra_layers: list[str] = []
+    if genre_text.strip():
+        extra_layers.append("【题材设定】\n" + genre_text.strip())
+    if style_text.strip():
+        extra_layers.append("【文风】\n" + style_text.strip())
+    if extra_layers:
+        system_content = "\n\n".join(
+            [part for part in (system_content, "\n\n".join(extra_layers)) if part.strip()]
+        )
+
+    messages: list[dict[str, str]] = []
+    if system_content.strip():
+        messages.append({"role": "system", "content": system_content})
+    messages.append(
         {
             "role": "user",
             "content": _user_message(
-                workflow.get("working_prompts", []),
+                working_prompts,
                 payload.task,
                 payload.mode,
                 _protected_terms(),
                 payload.locked_fragments,
+                payload.positive_in,
+                payload.negative_in,
             ),
-        },
-    ]
+        }
+    )
+
     queue = comfy_client.queue_has_active_task(_comfyui_url())
     if queue["active"]:
         raise HTTPException(
@@ -790,21 +873,41 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
         "rule_status": rule_payload["status"],
         "conflicts": rule_payload["conflicts"],
         "unknown": rule_payload["unknown"],
-        "selected_profile_id": profile_choice["profile_id"],
-        "selected_profile_name": profile_choice["display_name"],
-        "profile_match_source": profile_choice["match_source"],
+        "persona_id": persona_meta["id"] if persona_meta else None,
+        "persona_name": persona_meta.get("display_name") if persona_meta else None,
+        "persona_kind": persona_kind,
+        "genre": payload.genre if genre_text.strip() else None,
+        "style": payload.style if style_text.strip() else None,
+        "selected_profile_id": profile_choice["profile_id"] if profile_choice else None,
+        "selected_profile_name": profile_choice["display_name"] if profile_choice else None,
+        "profile_match_source": profile_choice["match_source"] if profile_choice else None,
         "profile_version": profile_meta["version"] if profile_meta else None,
         "profile_content_hash": profile_meta["content_hash"] if profile_meta else None,
         "checkpoint_name": checkpoint,
         "architecture": context.get("architecture_label"),
-        "fallback_reason": profile_choice["fallback_reason"],
-        "profile_warning": profile_choice["warning"],
+        "fallback_reason": profile_choice["fallback_reason"] if profile_choice else None,
+        "profile_warning": profile_choice["warning"] if profile_choice else None,
         "system_prompt_layers": {
-            "core": bool(core_text.strip()),
+            "core": bool(identity_text.strip()),
             "profile": bool(profile_rules.strip()),
             "workflow": bool(workflow_rules_text.strip()),
+            "genre": bool(genre_text.strip()),
+            "style": bool(style_text.strip()),
         },
     }
+
+
+@router.post("/prompt/candidates")
+def prompt_candidates_standalone(payload: PromptCandidateRequest):
+    """Candidate generation without a bound workflow (bare model / writing)."""
+    return _generate_candidate(None, payload)
+
+
+@router.post("/{workflow_id}/prompt/candidates")
+def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
+    """Ask the local Ollama model for a prompt candidate for this workflow."""
+    return _generate_candidate(workflow_id, payload)
+
 
 
 def _submit_guarded(

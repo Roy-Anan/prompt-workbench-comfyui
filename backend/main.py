@@ -34,6 +34,7 @@ import model_catalog
 import model_identity
 import profile_source
 import prompt_profiles
+import prompt_personas
 import queue_dispatcher
 import rule_engine
 import rule_store
@@ -1687,6 +1688,24 @@ class ProfileConfirm(BaseModel):
 def list_prompt_profiles():
     """List registered local Prompt Profiles with validation state."""
     return {"items": prompt_profiles.list_profiles()}
+
+
+@app.get("/api/personas")
+def list_personas():
+    """List selectable identity / system-prompt personas."""
+    return {"items": prompt_personas.list_personas()}
+
+
+@app.get("/api/genres")
+def list_genres():
+    """List writing genre setting templates."""
+    return {"items": prompt_personas.list_genres()}
+
+
+@app.get("/api/styles")
+def list_styles():
+    """List writing style templates."""
+    return {"items": prompt_personas.list_styles()}
 
 
 @app.get("/api/prompt-profiles/staging")

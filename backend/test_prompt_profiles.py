@@ -6,6 +6,7 @@ import hashlib
 import json
 
 import llm_client
+import prompt_personas
 import prompt_profiles
 import rule_store
 
@@ -319,6 +320,8 @@ def test_candidate_injects_core_profile_and_workflow_layers(client, tmp_path, mo
         "core": True,
         "profile": True,
         "workflow": True,
+        "genre": False,
+        "style": False,
     }
 
     system_text = captured["messages"][0]["content"]
@@ -357,3 +360,135 @@ def test_candidate_falls_back_when_no_profile_matches(client, tmp_path, monkeypa
     assert body["fallback_reason"]
     assert body["system_prompt_layers"]["profile"] is False
     assert body["system_prompt_layers"]["core"] is True
+
+
+def _write_persona(root, pid, kind, system_text, display_name="助手"):
+    d = root / "personas" / pid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "system.txt").write_text(system_text, encoding="utf-8")
+    manifest_path = root / "personas" / "manifest.json"
+    manifest = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_path.is_file()
+        else {"personas": []}
+    )
+    manifest["personas"] = [e for e in manifest["personas"] if e.get("id") != pid]
+    manifest["personas"].append(
+        {
+            "id": pid,
+            "display_name": display_name,
+            "kind": kind,
+            "system_file": f"personas/{pid}/system.txt",
+            "enabled": True,
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    prompt_personas._cache["key"] = None
+
+
+def _write_layer(root, folder, lid, text):
+    f = root / folder / f"{lid}.txt"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(text, encoding="utf-8")
+    prompt_personas._cache["key"] = None
+
+
+def _candidate_fake(monkeypatch, captured):
+    def fake_chat(url, model, messages, timeout=30.0, options=None):
+        captured["messages"] = messages
+        return {"ok": True, "content": "candidate text", "model": model, "error": None}
+
+    monkeypatch.setattr(llm_client, "chat", fake_chat)
+
+
+def test_candidate_bare_model_sends_no_system(client, tmp_path, monkeypatch):
+    test_client, main = client
+    _make_root(tmp_path, monkeypatch)
+
+    captured: dict = {}
+    _candidate_fake(monkeypatch, captured)
+
+    response = test_client.post(
+        "/api/workflows/prompt/candidates",
+        headers={"Authorization": "Bearer test-session-token"},
+        json={"model": "test-model", "persona": "none"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["persona_kind"] == "generic"
+    assert body["system_prompt_layers"] == {
+        "core": False,
+        "profile": False,
+        "workflow": False,
+        "genre": False,
+        "style": False,
+    }
+    assert all(m["role"] != "system" for m in captured["messages"])
+
+
+def test_writing_persona_skips_profile_and_adds_genre_style(client, tmp_path, monkeypatch):
+    test_client, main = client
+    root = _make_root(tmp_path, monkeypatch)
+    _write_profile(root, "alpha", FULL_RULES, patterns=["alpha.safetensors"])
+    _write_persona(root, "writing_assistant", "writing", "写作助手身份正文")
+    _write_layer(root, "genres", "yanqing", "言情题材要素")
+    _write_layer(root, "styles", "gufeng", "古风文风约定")
+
+    db = main.DATA_ROOT / "database" / "workbench.sqlite3"
+    _seed_context_rules(db)
+    workflow = {
+        "5": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {"ckpt_name": "alpha.safetensors"},
+        }
+    }
+    workflow_id = _import_sample(test_client, main, workflow)
+
+    captured: dict = {}
+    _candidate_fake(monkeypatch, captured)
+
+    response = test_client.post(
+        f"/api/workflows/{workflow_id}/prompt/candidates",
+        headers={"Authorization": "Bearer test-session-token"},
+        json={
+            "model": "test-model",
+            "persona": "writing_assistant",
+            "genre": "yanqing",
+            "style": "gufeng",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["persona_kind"] == "writing"
+    assert body["selected_profile_id"] is None
+    layers = body["system_prompt_layers"]
+    assert layers["profile"] is False
+    assert layers["genre"] is True
+    assert layers["style"] is True
+
+    system_text = captured["messages"][0]["content"]
+    assert "写作助手身份正文" in system_text
+    assert "言情题材要素" in system_text
+    assert "古风文风约定" in system_text
+
+
+def test_unknown_persona_falls_back_generic_without_identity(client, tmp_path, monkeypatch):
+    test_client, main = client
+    _make_root(tmp_path, monkeypatch)
+
+    captured: dict = {}
+    _candidate_fake(monkeypatch, captured)
+
+    response = test_client.post(
+        "/api/workflows/prompt/candidates",
+        headers={"Authorization": "Bearer test-session-token"},
+        json={"model": "test-model", "persona": "ghost"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["persona_kind"] == "generic"
+    assert body["persona_id"] == "ghost"
+    assert body["system_prompt_layers"]["core"] is False
+    assert all(m["role"] != "system" for m in captured["messages"])

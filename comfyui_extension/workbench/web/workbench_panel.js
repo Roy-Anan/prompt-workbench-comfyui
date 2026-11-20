@@ -318,6 +318,9 @@ const PICKER_SOURCES = {
   workflow_id: { endpoint: "workflows", storage: "workbench.lastWorkflowId" },
   model: { endpoint: "ollama-models", storage: "workbench.lastOllamaModel" },
   prompt_profile: { endpoint: "profiles", storage: "workbench.lastProfile" },
+  persona: { endpoint: "personas", storage: "workbench.lastPersona" },
+  genre: { endpoint: "genres", storage: "workbench.lastGenre" },
+  style: { endpoint: "styles", storage: "workbench.lastStyle" },
 };
 
 const pickerCache = {};
@@ -374,6 +377,24 @@ function profileOptions(items) {
   return [["auto（自动匹配）", "auto"], ...items.map(profileOption)];
 }
 
+function personaOption(item) {
+  const label = item.display_name || item.id;
+  return [label, item.id];
+}
+
+function personaOptions(items) {
+  return [["无（裸模型）", "none"], ...items.map(personaOption)];
+}
+
+function layerOption(item) {
+  const label = item.display_name || item.id;
+  return [label, item.id];
+}
+
+function layerOptions(items) {
+  return [["不指定", ""], ...items.map(layerOption)];
+}
+
 function applyComboOptions(widget, options) {
   if (!widget) return;
   const opts = options.length ? options : [["", ""]];
@@ -399,6 +420,8 @@ function siblingValue(node, name) {
 function optionsFor(widgetName, items) {
   if (widgetName === "workflow_id") return items.map(workflowOption);
   if (widgetName === "model") return items.map(modelOption);
+  if (widgetName === "persona") return personaOptions(items);
+  if (widgetName === "genre" || widgetName === "style") return layerOptions(items);
   return profileOptions(items);
 }
 
@@ -408,12 +431,15 @@ function bindPickerNode(node) {
     if (!source) continue;
 
     void fetchPickerList(source.endpoint).then((items) => {
-      applyComboOptions(widget, optionsFor(widget.name, items));
-      if (!widget.value) {
+      const opts = optionsFor(widget.name, items);
+      applyComboOptions(widget, opts);
+      const values = opts.map((o) => o[1]);
+      if (!values.includes(String(widget.value))) {
         // Reuse a value already bound on this canvas first, then fall back to
-        // the last choice remembered in this browser.
+        // the last choice remembered in this browser; otherwise the first
+        // (empty / sentinel) option.
         const inherited = siblingValue(node, widget.name) || localStorage.getItem(source.storage);
-        if (inherited) widget.value = inherited;
+        widget.value = values.includes(inherited) ? inherited : values[0];
       }
     });
 
