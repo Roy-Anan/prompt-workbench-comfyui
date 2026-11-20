@@ -311,6 +311,34 @@ def test_stopper_fallback_leaves_unmatched_process(monkeypatch):
     assert terminated == []
 
 
+def test_comfyui_launcher_auto_launches_by_default(monkeypatch):
+    monkeypatch.delenv("COMFYUI_AUTO_LAUNCH", raising=False)
+    launcher = _load("comfy_launcher", "comfyui_launcher.py")
+    captured: dict = {}
+
+    def fake_call(cmd):
+        captured["cmd"] = cmd
+        return 0
+
+    monkeypatch.setattr(launcher.subprocess, "call", fake_call)
+    assert launcher.main() == 0
+    assert "--auto-launch" in captured["cmd"]
+
+
+def test_comfyui_launcher_respects_disable_env(monkeypatch):
+    monkeypatch.setenv("COMFYUI_AUTO_LAUNCH", "0")
+    launcher = _load("comfy_launcher", "comfyui_launcher.py")
+    captured: dict = {}
+
+    def fake_call(cmd):
+        captured["cmd"] = cmd
+        return 0
+
+    monkeypatch.setattr(launcher.subprocess, "call", fake_call)
+    assert launcher.main() == 0
+    assert "--auto-launch" not in captured["cmd"]
+
+
 def test_stopper_fallback_no_health_match_does_not_touch(monkeypatch):
     stopper = _load("stopper", "workbench_stopper.py")
     monkeypatch.setattr(stopper, "_health_app_matches", lambda h, p: False)

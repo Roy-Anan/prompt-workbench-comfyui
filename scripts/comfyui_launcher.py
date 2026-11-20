@@ -30,6 +30,14 @@ MAIN = COMFY_ROOT / "ComfyUI" / "main.py"
 
 LISTEN = os.environ.get("COMFYUI_LISTEN", "127.0.0.1")
 PORT = os.environ.get("COMFYUI_PORT", "8188")
+# Open the ComfyUI GUI in the default browser once the server is up. Set
+# COMFYUI_AUTO_LAUNCH=0 (or false/no) to keep the browser closed.
+AUTO_LAUNCH = os.environ.get("COMFYUI_AUTO_LAUNCH", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
 
 
 def main() -> int:
@@ -51,6 +59,8 @@ def main() -> int:
         "--extra-model-paths-config",
         str(EXTRA_YAML),
     ]
+    if AUTO_LAUNCH:
+        cmd.append("--auto-launch")
     # Any extra arguments passed to this script are forwarded to ComfyUI.
     cmd += sys.argv[1:]
 

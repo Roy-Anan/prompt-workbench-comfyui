@@ -33,8 +33,10 @@ comfyui_extension/
 自带节点并存。三种等价启动方式（任选其一）：
 
 1. **仓库根双击入口**：`启动 ComfyUI（工作台扩展）.bat`，内部调用
-   `scripts/comfyui_launcher.py`，自动拼好上面的参数并前台启动；整合包
-   根目录可用环境变量 `COMFYUI_ROOT` 覆盖（默认指向本机秋叶整合包）。
+   `scripts/comfyui_launcher.py`，自动拼好上面的参数并前台启动；默认带
+   `--auto-launch` 在服务起来后自动打开默认浏览器，设环境变量
+   `COMFYUI_AUTO_LAUNCH=0` 可关闭；整合包根目录可用环境变量 `COMFYUI_ROOT`
+   覆盖（默认指向本机秋叶整合包）。
 2. **命令行**：用整合包 Python 启动 `ComfyUI/main.py`，附加
    `--extra-model-paths-config <本目录>/extra_paths.yaml`。
 3. **绘世启动器 GUI**：在高级选项/启动参数里填入同一条

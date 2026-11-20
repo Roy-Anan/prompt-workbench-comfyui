@@ -4468,6 +4468,22 @@
 - `workflow_id` 保留下拉：画布 ComfyUI 工作流 ≠ 后端规则档案，节点按 id 取齐规则/现有提示词/受保护词，不能省略；graph↔workflow 指纹自动匹配仍后置。
 - combo 允许自由输入兜底，后端收到未登记的 model/profile 按既有容错处理。
 
+## 171. ComfyUI 启动默认自动打开浏览器（2026-11-20）
+
+### 171.1 落地内容
+
+- `scripts/comfyui_launcher.py` 默认向 ComfyUI 命令追加 `--auto-launch`，服务起来后
+  用默认浏览器打开 GUI；环境变量 `COMFYUI_AUTO_LAUNCH=0/false/no` 可关闭。
+- 原因：此前命令未带该参数，非 standalone 构建默认不弹浏览器；绘世启动器拉起的
+  实例带 `--auto-launch` 所以会自动打开，自行启动的脚本不会。
+- README 启动方式第 1 条同步说明自动打开与关闭开关。
+
+### 171.2 回归
+
+- `test_scripts.py` 新增两条：默认命令含 `--auto-launch`、`COMFYUI_AUTO_LAUNCH=0`
+  时不含；定向脚本测试除记录在案的环境型 stopper 用例外全过。
+- 全量后端 **432 passed, 2 failed**，两个失败仍为既有环境型，与本轮无关。
+
 
 
 
