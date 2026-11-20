@@ -87,8 +87,8 @@ ComfyUI 节点进程看不到启动器内存里的 bootstrap 令牌。后端首�
 
 | 优先级 | 插件 | 仓库 | 用途 | 备注 |
 | --- | --- | --- | --- | --- |
-| 高 | ComfyUI-Lora-Auto-Trigger-Words | `idrirap/ComfyUI-Lora-Auto-Trigger-Words` | 自动拉取 LoRA 触发词（Civitai API + safetensors 元数据），支持堆叠 LoRA | 查重首选复用；LoRA 手动资料、身份归并、触发词共享、组合冲突裁决仍走工作台后端 |
-| 高 | ComfyUI-Unload-Model | `SeanScripts/ComfyUI-Unload-Model` | 卸载 ComfyUI 自身模型 / 全部模型释放显存 | 纯 Python/Torch 无额外依赖；只管 ComfyUI 模型，外部 Ollama 卸载仍用工作台自建节点 |
+| 高 ✅已装 | ComfyUI-Lora-Auto-Trigger-Words | `idrirap/ComfyUI-Lora-Auto-Trigger-Words` | 自动拉取 LoRA 触发词（Civitai API + safetensors 元数据），支持堆叠 LoRA | 2026-11-20 已 clone 到整合包 `custom_nodes`，仅依赖 `requests`（整合包已带）；查重首选复用，LoRA 手动资料/身份归并/触发词共享/组合冲突裁决仍走工作台后端 |
+| 高 ✅已装 | ComfyUI-Unload-Model | `SeanScripts/ComfyUI-Unload-Model` | 卸载 ComfyUI 自身模型 / 全部模型释放显存 | 2026-11-20 已 clone；纯 Python/Torch 无额外依赖；只管 ComfyUI 模型，外部 Ollama 卸载仍用工作台自建节点 |
 | 中 | ComfyUI-Lora-Manager | `willmiao/ComfyUI-Lora-Manager` | LoRA 可视化网格、预览缩略图、触发词、可收藏组合（recipes） | 带 Python 依赖；LoRA 数量多时再装 |
 | 可选 | LoRa Loader with TriggerDB | `benstaniford/comfy-lora-loader-with-triggerdb` | 本地 JSON 持久化每个 LoRA 的触发词 | 配合提示词合并节点使用 |
 | 可选 | FindingLora | `shootthesound/comfyui-lora-FindingLora` | LoRA 书签 + 模糊搜索 + 触发词一键复制 | LoRA 下拉列表很长时有用 |

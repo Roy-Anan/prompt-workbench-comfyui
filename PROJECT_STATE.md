@@ -3823,5 +3823,6 @@
 - **仍未目视**：侧边栏页签在 ComfyUI GUI 内的实际渲染与交互（未开浏览器截图）；节点与 JS 下发链路已验证。
 - backlog：LLM 候选节点依赖后端工作流上下文（workflow_id 规则/提示词/术语），与画布桥同属后期阶段；面板内只读规则/草稿列表需先打通浏览器只读会话。
 - 复用侧现成节点清单已落档 `comfyui_extension/README.md`：高优先 Lora-Auto-Trigger-Words、Unload-Model；中/可选 Lora-Manager、TriggerDB、FindingLora；通用 LLM 对话节点、提示词收藏插件、成品画廊不装（自建或内置已覆盖）。本机 custom_nodes 经核对未装同类插件。
+- **2026-11-20 已安装两个高优先插件**（clone 到整合包 `ComfyUI/custom_nodes/`，不进工作台仓库）：`idrirap/ComfyUI-Lora-Auto-Trigger-Words`（仅依赖 `requests`，整合包 Python 3.13.11 已带 2.32.5，无需 pip）、`SeanScripts/ComfyUI-Unload-Model`（纯 Python/Torch 无依赖）。真机起 ComfyUI v0.30.2 验收：object_info 出现 `LoraLoaderVanilla/StackedVanilla/Advanced/TagsOnly` 与 `UnloadModel/UnloadAllModels`，日志 0.0 秒干净加载无 Traceback；工作台两节点仍在。验收后已停止进程，8188 释放，显存回落约 39MiB。
 
 
