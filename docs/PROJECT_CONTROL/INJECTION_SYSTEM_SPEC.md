@@ -3,7 +3,7 @@
 - 文档版本：1.0
 - 日期：2026-11-17
 - 阶段：M0 基线规范（描述目标设计，不代表功能已实现）
-- 关联：`PROJECT_MASTER_PLAN.md`、`PROJECT_ARCHITECTURE.md`、`legacy-materials/`
+- 关联：`docs/ARCHITECTURE.md`、`docs/REQUIREMENTS_BASELINE.md`、`legacy-materials/`（早期总计划/架构视图见 `docs/archive/`）
 
 ## 1. 目的
 

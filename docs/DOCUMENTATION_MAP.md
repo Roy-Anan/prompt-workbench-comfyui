@@ -20,7 +20,7 @@
 | 文档 | 定位 | 状态 |
 |---|---|---|
 | `docs/PROJECT_CONTROL/INJECTION_SYSTEM_SPEC.md` | LLM 注入系统规范：文件分类、组合、追溯、安全边界 | 现行 |
-| `docs/PROJECT_CONTROL/THREE_SLICE_SPEC.md` | 三段可选注入与两类身份规范（本次新增，草案待落地） | 现行 |
+| `docs/PROJECT_CONTROL/THREE_SLICE_SPEC.md` | 三段可选注入与两类身份规范（已落地） | 现行 |
 | `docs/decisions/ADR-0001-TECH-STACK.md` | 早期技术栈决策（Tauri 路线，已废弃） | 历史决策，留档 |
 | `docs/decisions/ADR-0002-LOCAL-WEB-RUNTIME.md` | 本机浏览器 Web 运行时决策（现行） | 现行 |
 
@@ -36,13 +36,13 @@
 
 下列文件位于仓库根，与 `docs/` 现行文档存在重复或已被取代。处置原则：**不删除历史内容**，迁入 `docs/archive/` 并在原位置留废弃指引；git 历史可追溯。
 
-| 根级文件 | 现状判断 | 建议处置 |
+| 根级文件 | 现状判断 | 处置 |
 |---|---|---|
-| `PROJECT_ARCHITECTURE.md` | 早期 Tauri/桌面宿主架构，已被 `docs/ARCHITECTURE.md`（ADR-0002 Web）取代 | 迁入 `docs/archive/PROJECT_ARCHITECTURE_legacy.md`；根文件头部标注废弃并指向现行架构 |
-| `PROJECT_MASTER_PLAN.md` | 早期总计划，产品定位/模块划分/安全规则已被 OVERVIEW、REQUIREMENTS_BASELINE、ARCHITECTURE 覆盖 | 迁入 `docs/archive/PROJECT_MASTER_PLAN_legacy.md` |
-| `PROJECT_CHANGELOG.md` | 版本时间线记录（仅到 dev.5 早期） | 保留价值，迁 `docs/CHANGELOG.md`，后续版本记录写这里 |
-| `PROJECT_STATE.md` | 306KB / 172 节流水账；仅最新几节反映当前状态，早期切片为历史记录 | 拆分：当前有效状态提炼到 `docs/CURRENT_STATE.md`；第 1–159 节历史切片整体迁入 `docs/archive/STATE_HISTORY.md` |
-| `UPLOAD_GUIDE.md` | 仓库远端、推送命令、不入库范围、隐私提醒 | 迁 `docs/UPLOAD_GUIDE.md`；README 或交接手册补引用 |
+| `PROJECT_ARCHITECTURE.md` | 早期 Tauri/桌面宿主架构，已被 `docs/ARCHITECTURE.md`（ADR-0002 Web）取代 | **已迁入** `docs/archive/PROJECT_ARCHITECTURE_legacy.md`，头部标注废弃并指向现行架构 |
+| `PROJECT_MASTER_PLAN.md` | 早期总计划，产品定位/模块划分/安全规则已被 OVERVIEW、REQUIREMENTS_BASELINE、ARCHITECTURE 覆盖 | **已迁入** `docs/archive/PROJECT_MASTER_PLAN_legacy.md` |
+| `PROJECT_CHANGELOG.md` | 版本时间线记录（仅到 dev.5 早期） | **已迁入** `docs/CHANGELOG.md`，后续版本记录写这里 |
+| `PROJECT_STATE.md` | 306KB / 172 节流水账；仅最新几节反映当前状态，早期切片为历史记录 | 待拆分：当前有效状态提炼到 `docs/CURRENT_STATE.md`；第 1–159 节历史切片整体迁入 `docs/archive/STATE_HISTORY.md` |
+| `UPLOAD_GUIDE.md` | 仓库远端、推送命令、不入库范围、隐私提醒 | **已迁入** `docs/UPLOAD_GUIDE.md`，README 已补引用 |
 
 ## 5. 目标目录结构
 

@@ -1,5 +1,7 @@
 # PROJECT_MASTER_PLAN — 新项目正式总计划
 
+> **已废弃归档（2026-11-20）**：本文件为早期 M0 总计划，产品定位、模块划分与安全规则已被 `docs/PROJECT_OVERVIEW.md`、`docs/REQUIREMENTS_BASELINE.md`、`docs/ARCHITECTURE.md` 覆盖；仅留作历史追溯，不再回写。
+
 - 任务编号：TASK-001
 - 文档版本：1.0
 - 建立日期：2026-11-17
