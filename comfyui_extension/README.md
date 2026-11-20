@@ -20,16 +20,32 @@ comfyui_extension/
 
 ## 挂载方式（不污染整合包）
 
-ComfyUI 启动时额外加载本目录的路径配置：
+扩展代码全部留在本仓库，不复制进整合包 `custom_nodes/`。ComfyUI 启动时
+通过官方 `--extra-model-paths-config` 参数加载本目录的路径配置：
 
 ```
 --extra-model-paths-config D:\AI\ComfyUI-Prompt-Workbench-Git\comfyui_extension\extra_paths.yaml
 ```
 
 该 yaml 把 `workbench/` 包目录追加进 `custom_nodes` 扫描列表，与整合包
-自带节点并存。若启动器界面不支持填额外参数，退路是在整合包
-`custom_nodes/` 下建一个目录联接（junction）指向本包；链接可删，正本
-仍在仓库。
+自带节点并存。三种等价启动方式（任选其一）：
+
+1. **仓库根双击入口**：`启动 ComfyUI（工作台扩展）.bat`，内部调用
+   `scripts/comfyui_launcher.py`，自动拼好上面的参数并前台启动；整合包
+   根目录可用环境变量 `COMFYUI_ROOT` 覆盖（默认指向本机秋叶整合包）。
+2. **命令行**：用整合包 Python 启动 `ComfyUI/main.py`，附加
+   `--extra-model-paths-config <本目录>/extra_paths.yaml`。
+3. **绘世启动器 GUI**：在高级选项/启动参数里填入同一条
+   `--extra-model-paths-config` 参数，再按平时方式启动。
+
+> 退路：若启动器不支持额外参数，可在整合包 `custom_nodes/` 下建目录联接
+> （junction）指向本包；链接可删，正本仍在仓库。优先用上面的参数方式。
+
+**已真机验证**（秋叶整合包 ComfyUI v0.30.2，2026-11-20）：带参数启动后
+日志出现 `Adding extra search path custom_nodes ...\comfyui_extension`，
+两个节点在 `/object_info` 注册成功（`WorkbenchRuleQuery` /
+`WorkbenchReleaseVram`，中文名正确）；面板 JS 由
+`/extensions/workbench/workbench_panel.js` 正常下发。
 
 节点运行在整合包 Python 里，通过回环地址访问现有 FastAPI 后端
 （默认 `http://127.0.0.1:17890`，可用 `WORKBENCH_API_URL` 覆盖）。

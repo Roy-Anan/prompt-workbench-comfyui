@@ -90,6 +90,9 @@ Tauri/Rust/PyInstaller/NSIS 路线已废弃（ADR-0001，历史记录见 `legacy
   也不触碰 Ollama / ComfyUI。
 - 可选环境变量：`WORKBENCH_HOST`（仅允许回环地址）、`WORKBENCH_PORT`（默认 17890）、
   `WORKBENCH_OPEN_BROWSER=0`（启动后不自动开浏览器）。
+- ComfyUI 扩展（节点 + 侧边栏页签）：双击 `启动 ComfyUI（工作台扩展）.bat`，
+  或在绘世启动器启动参数里加 `--extra-model-paths-config` 指向
+  `comfyui_extension/extra_paths.yaml`；详见 [ComfyUI 外部扩展说明](comfyui_extension/README.md)。
 
 ### 数据位置
 

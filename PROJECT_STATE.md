@@ -3811,6 +3811,7 @@
   - `WorkbenchReleaseVram`（工作台释放显存/卸载LLM）：经后端 `POST /api/system/release-vram` 复用现有 best-effort 卸载链路，返回卸载摘要与原始 JSON；带 `enabled` 开关，未启用不调用后端。
 - 侧边栏：`web/workbench_panel.js` 注册一个工作台页签，探针 `/api/health` 展示连通状态与版本，拉取免鉴权只读 `/api/overview` 展示规则/工作流/草稿/素材/历史计数，并提供跳转完整工作台的入口；草稿/素材/LoRA/规则编辑仍在工作台页面。
 - 概览端点：`GET /api/overview` 与 health 同级免鉴权（回环），只返回非敏感计数（rules/workflows/drafts/assets/history）与版本，不暴露 Prompt 文本、模型快照、备注或文件路径；数据源复用现有规则库、工作流/草稿存储、素材库与历史表。
+- 扩展挂载启动闭环：新增 `scripts/comfyui_launcher.py` 与仓库根 `启动 ComfyUI（工作台扩展）.bat`，用整合包 Python 起 `ComfyUI/main.py` 并附加 `--extra-model-paths-config comfyui_extension/extra_paths.yaml`；整合包根可用 `COMFYUI_ROOT` 覆盖。不复制、不改整合包源码；绘世启动器 GUI 高级参数填同一条命令行参数为等价方式。
 - 节点专用凭据：后端首次启动在 `userdata/settings/node_token.json` 持久化节点令牌（不入库、跨重启复用）；客户端按「节点输入框 → 环境变量 `WORKBENCH_SESSION_TOKEN` → 凭据文件」取令牌。令牌默认只读（仅 GET/HEAD/OPTIONS），窄白名单仅放行 `release-vram`；其余写请求 403。
 - CORS 白名单补充 ComfyUI 回环来源 `127.0.0.1:8188` / `localhost:8188`，供侧边栏读取免鉴权健康探针。
 
@@ -3818,7 +3819,8 @@
 
 - 后端全量 **382 passed**（含节点令牌落盘/复用、只读放行、写操作 403、白名单放行、客户端优先级与兜底、8188 来源 CORS、overview 免鉴权计数与回环来源放行）。
 - 用整合包 Python 冒烟：两个节点均注册成功，中文名、分类、输出类型与 `web/` 目录就位；凭据文件默认路径解析到仓库 `userdata/settings/node_token.json`；后端不可达时节点返回友好错误不崩画布。
-- **未真机验证**：ComfyUI 前端侧边栏页签的实际渲染与交互（本轮未启动 ComfyUI 前端实测）；`workbench_panel.js` 已通过 ESM 语法校验。
+- **真机验收（2026-11-20，秋叶整合包 ComfyUI v0.30.2）**：带扩展参数启动后，日志出现 `Adding extra search path custom_nodes ...\comfyui_extension`；`/object_info` 中 `WorkbenchRuleQuery`、`WorkbenchReleaseVram` 注册成功且中文名正确；面板 JS 由 `/extensions/workbench/workbench_panel.js` 正常下发（HTTP 200，含 `registerSidebarTab`）。验收后已停止该 ComfyUI 进程，8188 释放，显存回落至约 39MiB。
+- **仍未目视**：侧边栏页签在 ComfyUI GUI 内的实际渲染与交互（未开浏览器截图）；节点与 JS 下发链路已验证。
 - backlog：LLM 候选节点依赖后端工作流上下文（workflow_id 规则/提示词/术语），与画布桥同属后期阶段；面板内只读规则/草稿列表需先打通浏览器只读会话。
 
 
