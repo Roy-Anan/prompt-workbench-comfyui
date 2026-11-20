@@ -27,7 +27,7 @@
 - **R140 真机验收已通过**：本地 LLM 候选全链路（提示词类/写作类/裸模型三种身份）、画布新节点下拉与三口连线、题材/文风注入效果已在真机跑通核对；前端 tsc/build 与后端单测/扩展测试回归兜底。
 - **工作台前端 standalone 入口已放开（2026-11-20）**：新增独立「写作助手」页签，不绑定工作流即可选身份/题材/文风/模式直接生成，打后端独立轮次路由 `POST /api/workflows/prompt/candidates`（无 `workflow_id`）；候选仅在本页复制使用，不写入工作副本、草稿与历史。
 - **身份按页签分割（2026-11-20）**：工作流工作区固定提示词助手身份（`prompt_assistant`），不提供身份下拉、不读身份记忆，保留规则套与负向模式；写作助手页签身份下拉仅列裸模型（`none`）与写作助手（`writing_assistant`），去掉规则套下拉，题材/文风恒显，模式不含负向词。
-- **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述上传图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门），结果只读不写工作副本/草稿/历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**现状未真机跑通识别**：本机 `qwen3:latest` 缺 mmproj 投影器，需补齐投影器权重后才能出图描述；代码与测试已就绪。
+- **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述上传图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门），结果只读不写工作副本/草稿/历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**已真机跑通识别**：由同源 Qwen3-VL-8B-Instruct 视觉投影器（mmproj Q8_0，ModelScope 官方 GGUF 仓库）与本机 heretic 语言权重组装出新标签 `qwen3-vl:latest`，工作台页签上传图片可返回中文描述；纯文本底模与未挂投影器的 `qwen3:latest` 被精确过滤、不进下拉。
 - **已知环境型测试失败（非回归，勿改测试逻辑）**：
   - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。
   - `test_sidebar_summary.py::test_empty_sections_report_zero_totals`：读到本机真实非零计数。
@@ -38,5 +38,5 @@
 
 - Windows 11，i7-12650H，16GB RAM，RTX 4060 Laptop 8GB VRAM。
 - 后端独立 `.venv`（不复用整合包内部 Python）；Node/Vite 仅用于构建前端产物。
-- 本机 Ollama 模型：`qwen3:latest`（8.2B，VL 架构底模，当前未挂载视觉投影器 mmproj，暂不能读图）、`qwen3-heretic:q4_k_m`（8.2B，纯文本）。原 `comfyui-prompt:v1` 已删除：它仅是 `qwen3:latest` 底模叠加一段系统提示词与固定参数的封装，无独立权重。
+- 本机 Ollama 模型：`qwen3-vl:latest`（8.2B，已挂载 Qwen3-VL-8B-Instruct mmproj Q8_0 视觉投影器，可读图识别；语言权重为本机 heretic Q4_K_M）、`qwen3:latest`（8.2B，VL 架构纯语言底模，未挂投影器，不能读图，作为 VL 标签的语言层复用）、`qwen3-heretic:q4_k_m`（8.2B，纯文本）。原 `comfyui-prompt:v1` 已删除：它仅是 `qwen3:latest` 底模叠加一段系统提示词与固定参数的封装，无独立权重。
 - 不入库：`userdata/`、`.venv/`、`frontend/dist/`、模型权重、原图与生成图片。
