@@ -17,6 +17,10 @@ from urllib.request import Request as UrlRequest, urlopen
 APP_NAME = "ComfyUI-Prompt-Workbench"
 DEFAULT_TIMEOUT = 30.0
 MAX_CANDIDATE_CHARS = 200_000
+# A prompt candidate is one short prompt block; a local 8B model can otherwise
+# drift into multi-thousand-token explanations. Cap generated tokens as a
+# safety net unless the caller explicitly passes its own ``num_predict``.
+MAX_PREDICT_TOKENS = 640
 
 
 def chat(
@@ -31,8 +35,9 @@ def chat(
     Returns ``{"ok": True, "content": str, "model": str, "error": None}`` on
     a usable response, otherwise ``{"ok": False, "content": None, ...}`` with
     an error string. Callers must treat ``ok is False`` as a failed request
-    and must not guess a candidate. ``options`` carries only whitelisted
-    generation parameters (temperature / top_p / num_ctx).
+    and must not guess a candidate. ``options`` carries whitelisted generation
+    parameters (temperature / top_p / num_ctx); a ``num_predict`` ceiling is
+    injected by default unless the caller supplies its own.
     """
     target = ollama_url.rstrip("/") + "/api/chat"
     payload: dict[str, Any] = {
@@ -43,8 +48,9 @@ def chat(
         # of leaving it resident for the server default keep-alive window.
         "keep_alive": 0,
     }
-    if options:
-        payload["options"] = options
+    opts = dict(options or {})
+    opts.setdefault("num_predict", MAX_PREDICT_TOKENS)
+    payload["options"] = opts
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = UrlRequest(target, data=body, method="POST")
     request.add_header("Content-Type", "application/json")

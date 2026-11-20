@@ -18,6 +18,10 @@ import rule_store
 from workflow_service import WorkflowError, WorkflowStore
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 system_router = APIRouter(prefix="/api/system", tags=["system"])
+
+# Local 8B-class models may cold-start and prefill a long rule context well
+# beyond the 30s client default; give the candidate round a generous ceiling.
+CANDIDATE_LLM_TIMEOUT = 180.0
 def store() -> WorkflowStore:
     return WorkflowStore(datadir.default_data_root() / "workflows")
 def _database_path() -> Path:
@@ -626,6 +630,7 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
         payload.model,
         messages,
         options=options or None,
+        timeout=CANDIDATE_LLM_TIMEOUT,
     )
     if not result["ok"]:
         raise HTTPException(

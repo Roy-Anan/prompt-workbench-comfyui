@@ -4078,6 +4078,52 @@
   Toast、三档分辨率真机复核；历史挂账细项同 160.3 / 161.3。
 
 
+## 164. 8B 模型 comfyui-prompt:v1 真机重跑与候选超时/长度兜底（2026-11-20）
+
+### 164.1 背景与本机模型盘点
+
+- 用户复核模型选择。本机 Ollama `/api/show` 实测三模型：
+  - `qwen2.5:3b` — 3.1B，Q4_K_M，1.93 GB（上一轮闭环用的就是它）。
+  - `comfyui-prompt:v1` — 8.2B，Q4_K_M，5.03 GB（提示词微调版）。
+  - `qwen3:latest` — 8.2B，Q4_K_M，5.03 GB（与 v1 同一底模 blob）。
+- 上一轮为快速跑通闭环挑了最轻的 3B；后端模型字段必填、不写死默认，前端
+  默认取清单第一项（3B 当日新拉、排第一），并非库里没有 8B。
+
+### 164.2 根因：8B 候选超长输出拖垮超时
+
+- 直连短 prompt 冷启动 7.7s 正常；走后端真实 messages 首轮 30s 超时
+  （502 timed out），放宽到 180s 后仍在 3 分钟时被 Ollama 判 500。
+- 复刻后端 messages 直连复现：输入很短（system 39 字符 / user 789 字符），
+  模型一轮生成 **7936 token / 189.6s**，加载仅约 3s，耗时全在失控的超长
+  生成；排除显存、内存与链路问题。
+
+### 164.3 修复
+
+- `llm_client.chat` 注入默认 `num_predict=640` 兜底（调用方可显式覆盖），
+  防止本地大模型输出数千 token 的解释性长文；白名单 options
+  （temperature / top_p / num_ctx）的精确匹配测试不受影响。
+- 候选端点 LLM 超时由默认 30s 放宽到 `CANDIDATE_LLM_TIMEOUT = 180s`，给冷
+  启动与长上下文 prefill 留余量。
+- 新增 `test_llm_client.py`：断言默认注入 `num_predict`、显式传参不被覆盖。
+
+### 164.4 8B v1 闭环真机跑通（通过）
+
+- 链路：候选（`comfyui-prompt:v1` / draft，200，约 16.7s）→ 拆正向段写入
+  （负向保留原值不动）→ 提交队列 → `running` → **`succeeded`**。
+- 成图 `pony_sdxl_00004_.png`（1.275 MB，图片端点 200 / image/png）；历史
+  记录 id=6，prompt `c2b6b997-ea9b-4c69-98ca-dc36eb67d552`；8GB 显存未
+  OOM，Ollama `/api/ps` 无驻留模型。
+- 观察：v1 正向候选后半段仍出现重复退化（连续 `no lens flare` 堆叠），并
+  沿用了无意义标签 `bench-acceptance-mark`；属模型生成质量限制，非后端缺陷。
+
+### 164.5 回归
+
+- 后端 406 passed；新增 2 个 llm_client 用例通过。
+- 环境型失败同 163.4：ComfyUI 在线时 sidebar LoRA 探测会读到本机 LoRA；
+  stopper 用例需先清仓库根 `.workbench.pid` / `.workbench-runtime.json`
+  残留再跑（无记录兜底仍可停当前实例）。
+
+
 
 
 
