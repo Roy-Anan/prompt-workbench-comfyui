@@ -1,0 +1,12 @@
+# ComfyUI extra search paths for the workbench external extension.
+#
+# This file lives outside the ComfyUI install and is loaded with:
+#   --extra-model-paths-config <repo>/comfyui_extension/extra_paths.yaml
+#
+# The `custom_nodes` key points at the parent folder of the `workbench`
+# package; ComfyUI scans that folder and loads `workbench/__init__.py` as a
+# custom node package. Nothing is copied into the integrated install.
+
+workbench:
+  base_path: .
+  custom_nodes: .
