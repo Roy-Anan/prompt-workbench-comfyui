@@ -3,11 +3,14 @@
 This module complements :mod:`prompt_profiles`. It manages the selectable
 identity and writing-layer templates under the profile root:
 
-- ``personas/<id>/system.txt`` -- selectable LLM identity / system prompt.
-  The folder name is the persona id; ``kind`` (``prompt`` / ``writing``) and
-  the display name are parsed from ``display_name:`` / ``kind:`` lines in the
-  file header. No central manifest is consulted: dropping a folder under
-  ``personas/`` is enough for it to appear in the list.
+- ``personas/<kind>/<id>/system.txt`` -- selectable LLM identity / system
+  prompt. The folder name is the persona id; the parent ``prompt`` / ``writing``
+  folder determines the kind. A ``kind:`` line in the file header overrides the
+  parent folder when present; a flat ``personas/<id>/system.txt`` layout is
+  still accepted, with the kind parsed from the header (default ``writing``).
+  The display name is parsed from a ``display_name:`` / ``name:`` header line.
+  No central manifest is consulted: dropping a folder under ``personas/`` is
+  enough for it to appear in the list.
 - ``genres/*.txt`` -- writing genre settings (writing class, third slot).
 - ``styles/*.txt`` -- writing style templates (writing class, fourth slot).
 
@@ -38,6 +41,8 @@ NONE_VALUE = "none"
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _META_LINE_RE = re.compile(r"^\s*(display_name|name|kind)\s*[:：]\s*(.+?)\s*$")
 _KIND_VALUES = {"prompt", "writing"}
+# Top-level folders that group personas by kind in the nested layout.
+_TYPE_DIRS = {"prompt", "writing"}
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"key": None, "personas": [], "genres": [], "styles": []}
 
@@ -73,9 +78,9 @@ def _cache_key() -> tuple[Any, Any]:
     persona_key: Any
     if personas_dir.is_dir():
         persona_key = tuple(
-            (sub.name, sub.stat().st_mtime_ns, sub.stat().st_size)
-            for sub in sorted(personas_dir.iterdir())
-            if sub.is_dir()
+            (str(path.relative_to(personas_dir)), path.stat().st_mtime_ns, path.stat().st_size)
+            for path in sorted(personas_dir.rglob("*"))
+            if path.is_file()
         )
     else:
         persona_key = None
@@ -190,9 +195,15 @@ def _extract_label(text: str, fallback: str) -> str:
     return fallback
 
 
-def _parse_persona_meta(text: str, fallback_id: str) -> tuple[str, str]:
-    """Pull ``kind`` and display name out of header ``key: value`` lines."""
+def _parse_persona_meta(text: str, fallback_id: str) -> tuple[str, str, bool]:
+    """Pull ``kind`` and display name out of header ``key: value`` lines.
+
+    Returns ``(kind, display, kind_explicit)``; ``kind_explicit`` is True only
+    when the header carried a valid ``kind`` value, so the caller can tell a
+    deliberate override apart from the default / folder-derived kind.
+    """
     kind = "writing"
+    kind_explicit = False
     display = ""
     for line in text.splitlines():
         match = _META_LINE_RE.match(line)
@@ -201,11 +212,42 @@ def _parse_persona_meta(text: str, fallback_id: str) -> tuple[str, str]:
         key, value = match.group(1).lower(), match.group(2).strip()
         if key == "kind" and value.lower() in _KIND_VALUES:
             kind = value.lower()
+            kind_explicit = True
         elif key in ("display_name", "name") and value:
             display = value[:40]
     if not display:
         display = _extract_label(text, fallback_id)
-    return kind, display
+    return kind, display, kind_explicit
+
+
+def _build_persona(persona_dir: Path, base_kind: str | None) -> dict[str, Any] | None:
+    pid = persona_dir.name
+    if pid.startswith("_") or pid.startswith(".") or not _ID_RE.match(pid):
+        return None
+    system_file = persona_dir / "system.txt"
+    text = ""
+    if system_file.is_file():
+        try:
+            text = _read_text(system_file)
+        except (OSError, UnicodeDecodeError):
+            text = ""
+    header_kind, display_name, kind_explicit = _parse_persona_meta(text, pid)
+    # Header kind wins as an explicit override; otherwise the parent type
+    # folder; flat layouts fall back to the default writing kind.
+    kind = header_kind if kind_explicit else (base_kind or "writing")
+    if base_kind:
+        rel = f"{PERSONAS_DIR}/{base_kind}/{pid}/system.txt"
+    else:
+        rel = f"{PERSONAS_DIR}/{pid}/system.txt"
+    return {
+        "id": pid,
+        "display_name": display_name,
+        "kind": kind,
+        "system_file": rel,
+        "description": "",
+        "enabled": True,
+        "exists": bool(text.strip()),
+    }
 
 
 def _scan_personas() -> list[dict[str, Any]]:
@@ -213,31 +255,22 @@ def _scan_personas() -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     if not folder.is_dir():
         return entries
-    for sub in sorted(folder.iterdir()):
-        if not sub.is_dir():
+    for top in sorted(folder.iterdir()):
+        if not top.is_dir():
             continue
-        pid = sub.name
-        if pid.startswith("_") or pid.startswith(".") or not _ID_RE.match(pid):
-            continue
-        system_file = sub / "system.txt"
-        text = ""
-        if system_file.is_file():
-            try:
-                text = _read_text(system_file)
-            except (OSError, UnicodeDecodeError):
-                text = ""
-        kind, display_name = _parse_persona_meta(text, pid)
-        entries.append(
-            {
-                "id": pid,
-                "display_name": display_name,
-                "kind": kind,
-                "system_file": f"{PERSONAS_DIR}/{pid}/system.txt",
-                "description": "",
-                "enabled": True,
-                "exists": bool(text.strip()),
-            }
-        )
+        if top.name in _TYPE_DIRS:
+            # Nested layout: personas/<kind>/<id>/system.txt
+            for sub in sorted(top.iterdir()):
+                if not sub.is_dir():
+                    continue
+                entry = _build_persona(sub, top.name)
+                if entry:
+                    entries.append(entry)
+        else:
+            # Legacy flat layout: personas/<id>/system.txt
+            entry = _build_persona(top, None)
+            if entry:
+                entries.append(entry)
     return entries
 
 

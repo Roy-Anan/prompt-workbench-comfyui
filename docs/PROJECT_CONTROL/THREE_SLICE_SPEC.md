@@ -101,8 +101,9 @@
 
 ```
 prompt_profiles/
-  personas/            # ② 身份定位（目录遍历：每个子文件夹一份身份）
-    <persona_id>/system.txt   # 头部 `display_name:` / `kind:` 标注类别与显示名
+  personas/            # ② 身份定位（目录遍历：按类型分两层）
+    prompt/<persona_id>/system.txt    # 提示词类身份
+    writing/<persona_id>/system.txt   # 写作类身份；头部 `display_name:` / `kind:` 标注显示名与类别
   genres/               # 写作类·③ 题材设定（每份一个 txt）
   styles/               # 写作类·④ 文风（每份一个 txt）
   models/<id>/          # 提示词类·③ 底模专属规则套（目录遍历）
@@ -111,7 +112,7 @@ prompt_profiles/
   templates/            # 空白骨架模板，供复制新增
 ```
 
-- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<id>/system.txt`，文件夹名即 id，放入目录后自动出现在下拉，无需登记清单。
+- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<prompt|writing>/<id>/system.txt`，文件夹名即 id，父目录定类型（头部 `kind:` 可覆盖），放入目录后自动出现在对应下拉，无需登记清单。
 - 新增题材 / 文风：复制 `genres/_TEMPLATE.txt` / `styles/_TEMPLATE.txt`。
 - 新增底模规则套：复制 `templates/MODEL_RULE_TEMPLATE.txt` 到 `models/<id>/rules.txt`，文件夹名即 id；需要精确文件名模式、别名、优先级、停用或版本记录时同目录放可选 `meta.json`。详见 `prompt_profiles/PROFILES_GUIDE.md`。
 - 模板 id 仅允许小写字母 / 数字 / `-` / `_`；路径限定在 profile 根内，拒绝 `..` 越权。

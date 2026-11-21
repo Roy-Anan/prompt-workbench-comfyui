@@ -1,8 +1,10 @@
 [PERSONA TEMPLATE · 身份 / 系统提示骨架]
-复制本文件到 personas/<persona_id>/system.txt（id 用小写字母/数字/-/_）。文件夹名即人设 id，放入 personas/ 目录后自动出现在下拉里，无需登记清单。
-文件头部用两行标注元数据：
+复制本文件到 personas/<类型>/<persona_id>/system.txt（id 用小写字母/数字/-/_）。
+类型目录：prompt（提示词类，配专属规则套与正负向）/ writing（写作类，配题材与文风）。
+文件夹名即人设 id，放入对应类型目录后自动出现在下拉里，无需登记清单。
+文件头部可标注元数据：
 display_name: 下拉里显示的名称
-kind: prompt（提示词类，配专属规则套与正负向）/ writing（写作类，配题材与文风）
+kind: prompt / writing（可省略；缺省时以父类型目录为准，写了则以头部为准）
 
 ## 角色
 （这个助手是谁、负责什么、不负责什么）

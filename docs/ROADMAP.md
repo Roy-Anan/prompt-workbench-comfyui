@@ -705,6 +705,10 @@ R148 已落地：人设 `personas/` 改为目录遍历。不再读 `personas/man
 
 R149 已落地：规则套 `models/<id>/` 改为目录遍历 + 目录内可选 `meta.json`。退役根 `manifest.json`，扫描 `models/<id>/rules.txt`（必选）与同目录 `meta.json`（可选）；显示名 / 架构 / 文件名从正文头部 `Display Name` / `Base Architecture` / `Exact Checkpoint Filename` 解析兜底，meta 同名字段优先。停用 / 版本归档 / 回滚 / 删除状态落在目录内 meta 与 `archive/`，staging 发布合并 meta；内容哈希读取时实时计算，不再手工登记。13 套存量已迁移为目录内 meta.json；测试 helper 改为写目录 + meta，新增无 meta 正文解析兜底断言。维护流程见 `prompt_profiles/PROFILES_GUIDE.md`。
 
+R150 已落地：内置写作类 `polish_assistant`（润色改写助手），与 `writing_assistant` 并列于写作页下拉可切换；后端目录遍历自动收录，无需登记清单。
+
+R151 已落地：人设 `personas/` 改为按类型分两层目录 `personas/prompt/<id>/`、`personas/writing/<id>/`，父目录定类型；头部 `kind:` 保留作显式覆盖，旧扁平 `personas/<id>/` 布局兼容、缺省归写作类。三套内置身份已迁移到对应类型目录；测试补父目录兜底、头部覆盖父目录、扁平兼容断言。
+
 - **M3 规则引擎**：global 级规则已由引擎三级继承装载；sets 专用/通用套优先级判定已由 R115
   落地；逐候选勾选/驳回已由 R108 落地；规则版本历史查看与回退已由 R116 落地；候选差异预览已由
   R119 落地；多模型与启用 LoRA 组合的冲突人工裁决界面已由 R120 落地。

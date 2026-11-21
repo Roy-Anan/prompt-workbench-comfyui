@@ -357,10 +357,22 @@ def test_candidate_falls_back_when_no_profile_matches(client, tmp_path, monkeypa
     assert body["system_prompt_layers"]["core"] is True
 
 
-def _write_persona(root, pid, kind, system_text, display_name="助手"):
-    d = root / "personas" / pid
+def _write_persona(
+    root,
+    pid,
+    kind,
+    system_text,
+    display_name="助手",
+    nested=True,
+    header_kind=True,
+    folder_kind=None,
+):
+    parent = folder_kind if folder_kind is not None else kind
+    d = root / "personas" / (parent if nested else "") / pid
     d.mkdir(parents=True, exist_ok=True)
-    header = f"display_name: {display_name}\nkind: {kind}\n"
+    header = f"display_name: {display_name}\n"
+    if header_kind:
+        header += f"kind: {kind}\n"
     (d / "system.txt").write_text(header + system_text, encoding="utf-8")
     prompt_personas._cache["key"] = None
 
@@ -384,6 +396,36 @@ def test_personas_are_scanned_from_directories(tmp_path, monkeypatch):
     assert entries["writing_assistant"]["kind"] == "writing"
     assert entries["writing_assistant"]["enabled"] is True
     assert entries["writing_assistant"]["exists"] is True
+
+
+def test_persona_kind_falls_back_to_parent_folder(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    # 两层目录但头部不写 kind：类型由父目录 prompt/、writing/ 决定。
+    _write_persona(root, "photo_prompt", "prompt", "画面描述", "写实提示词", header_kind=False)
+    _write_persona(root, "story_writer", "writing", "故事正文", "故事作者", header_kind=False)
+
+    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
+    assert entries["photo_prompt"]["kind"] == "prompt"
+    assert entries["story_writer"]["kind"] == "writing"
+
+
+def test_persona_header_kind_overrides_parent_folder(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    # 放在 writing/ 父目录下，但头部显式标 prompt：头部覆盖父目录。
+    _write_persona(root, "mismatch", "prompt", "正文", "覆盖身份", folder_kind="writing")
+
+    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
+    assert entries["mismatch"]["kind"] == "prompt"
+    assert entries["mismatch"]["system_file"] == "personas/writing/mismatch/system.txt"
+
+
+def test_flat_persona_layout_still_supported(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    _write_persona(root, "legacy_writer", "writing", "旧扁平正文", "旧写作", nested=False)
+
+    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
+    assert entries["legacy_writer"]["kind"] == "writing"
+    assert entries["legacy_writer"]["system_file"] == "personas/legacy_writer/system.txt"
 
 
 def test_persona_scan_skips_invalid_dirs_and_flags_missing_text(tmp_path, monkeypatch):
