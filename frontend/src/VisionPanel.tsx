@@ -1,11 +1,14 @@
 // Standalone vision panel: ask a local Ollama VL model to describe a picture.
 // Workbench only — there is no ComfyUI-node counterpart here.
 //
-// Pictures may come from the asset library (referenced by asset_id, archived to
-// history together with the description) or be picked up as a temporary local
-// upload (kept on this page only, never written to history or stored on disk).
+// Pictures arrive in two ways: handed over from the asset library ("图生文识别"
+// on an asset's detail card, referenced by asset_id) or picked up as a
+// temporary local upload (kept on this page only, never stored on disk).
+// After a description comes back, library assets can be tagged / annotated in
+// place, and temporary uploads can be filed into the library with or without
+// tags.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet, apiPost } from "./api";
 
 type VisionModelsResponse = {
@@ -21,17 +24,39 @@ type VisionResponse = {
   model: string;
   description: string;
   image_count: number;
+  tags?: string[];
 };
 
-type AssetOption = { id: number; name: string; exists: boolean };
+type AssetGroup = { id: number; name: string; is_default: boolean; count: number };
+
+type AssetItemBrief = {
+  id: number;
+  name: string;
+  tags: string[];
+  note: string;
+  exists: boolean;
+};
+
+type VisionSeed = { asset_id: number; name: string };
 
 type VisionPick = {
+  key: string;
   asset_id: number | null;
   name: string;
   dataUrl: string;
+  tags: string[];
+  note: string;
+};
+
+type VisionPanelProps = {
+  /** An asset handed over from the library page. */
+  seed?: VisionSeed | null;
+  /** Called once the seed has been taken into the pick list. */
+  onSeedUsed?: () => void;
 };
 
 const MAX_IMAGES = 2;
+const LIBRARY_SUFFIXES = [".png", ".jpg", ".jpeg", ".webp"];
 
 function readStoredParam(key: string): string {
   try {
@@ -81,24 +106,54 @@ function isVisionModel(
   return tags.some((tag) => tag.includes("vl") || tag.includes("vision"));
 }
 
-function assetImageUrl(assetId: number): string {
-  return `/api/assets/image?asset_id=${assetId}`;
+function splitTags(text: string): string[] {
+  return text
+    .split(/[,，]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
-export default function VisionPanel() {
+/** Suffix implied by a data URL's mime type, used when the file name has none. */
+function dataUrlSuffix(dataUrl: string): string {
+  const end = dataUrl.indexOf(";");
+  const mime = end > 5 ? dataUrl.slice(5, end) : "";
+  if (mime === "image/jpeg") return ".jpg";
+  if (mime === "image/webp") return ".webp";
+  if (mime === "image/gif") return ".gif";
+  return ".png";
+}
+
+function resolveUploadName(name: string, dataUrl: string): { name: string; ext: string } {
+  const match = /\.([A-Za-z0-9]+)$/.exec(name.trim());
+  if (match) {
+    const ext = `.${match[1].toLowerCase()}`;
+    return { name: name.trim(), ext };
+  }
+  const ext = dataUrlSuffix(dataUrl);
+  const base = name.trim() || "临时图片";
+  return { name: `${base}${ext}`, ext };
+}
+
+let pickSeq = 0;
+function nextPickKey(): string {
+  pickSeq += 1;
+  return `p${pickSeq}`;
+}
+
+export default function VisionPanel({ seed, onSeedUsed }: VisionPanelProps) {
   const [modelsOnline, setModelsOnline] = useState(true);
   const [models, setModels] = useState<string[]>([]);
   const [modelDetails, setModelDetails] = useState<Record<string, string>>({});
   const [selectedModel, setSelectedModel] = useState("");
   const [images, setImages] = useState<VisionPick[]>([]);
-  const [assets, setAssets] = useState<AssetOption[]>([]);
-  const [pickedAsset, setPickedAsset] = useState("");
+  const [groups, setGroups] = useState<AssetGroup[]>([]);
   const [promptText, setPromptText] = useState(() =>
     readStoredParam("vision.prompt"),
   );
   const [busy, setBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [description, setDescription] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [lastModel, setLastModel] = useState("");
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState("");
@@ -127,91 +182,125 @@ export default function VisionPanel() {
       }
     }
 
-    async function loadAssets() {
+    async function loadGroups() {
       try {
-        const result = await apiGet<{ items: AssetOption[] }>(
-          "/api/assets/items",
+        const result = await apiGet<{ groups: AssetGroup[] }>(
+          "/api/assets/groups",
         );
-        setAssets(
-          (result.items || []).filter((item) => item.exists !== false),
-        );
+        setGroups(result.groups || []);
       } catch {
-        setAssets([]);
+        setGroups([]);
       }
     }
 
     void loadModels();
-    void loadAssets();
+    void loadGroups();
   }, []);
+
+  // Take the asset handed over from the library, once per hand-over.
+  useEffect(() => {
+    if (!seed) return;
+    const handed = seed;
+    let alive = true;
+
+    async function takeSeed() {
+      try {
+        const response = await fetch(`/api/assets/image?asset_id=${handed.asset_id}`, {
+          credentials: "include",
+        });
+        if (!response.ok) throw new Error(`素材图片不可用（${response.status}）`);
+        const dataUrl = await blobToDataUrl(await response.blob());
+        const listing = await apiGet<{ items: AssetItemBrief[] }>("/api/assets/items");
+        const meta = (listing.items || []).find((item) => item.id === handed.asset_id);
+        if (!alive) return;
+        setImages((prev) => {
+          if (prev.some((pick) => pick.asset_id === handed.asset_id)) {
+            setMessage("这张素材已经在待识别列表中。");
+            return prev;
+          }
+          if (prev.length >= MAX_IMAGES) {
+            setMessage(`最多选择 ${MAX_IMAGES} 张图片，已忽略带入的素材。`);
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              key: nextPickKey(),
+              asset_id: handed.asset_id,
+              name: handed.name,
+              dataUrl,
+              tags: meta?.tags ?? [],
+              note: meta?.note ?? "",
+            },
+          ];
+        });
+        setMessage("");
+      } catch (error) {
+        if (alive) setMessage(`读取素材图片失败：${String(error)}`);
+      } finally {
+        if (alive) onSeedUsed?.();
+      }
+    }
+
+    void takeSeed();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
 
   async function addFiles(fileList: FileList | null) {
     if (!fileList) return;
     const slots = MAX_IMAGES - images.length;
-    if (slots <= 0) return;
+    if (slots <= 0) {
+      setMessage(`最多选择 ${MAX_IMAGES} 张图片。`);
+      return;
+    }
     const files = Array.from(fileList)
       .filter((file) => file.type.startsWith("image/"))
       .slice(0, slots);
     const loaded: VisionPick[] = [];
     for (const file of files) {
       const dataUrl = await readFileAsDataUrl(file);
-      loaded.push({ asset_id: null, name: file.name, dataUrl });
+      loaded.push({
+        key: nextPickKey(),
+        asset_id: null,
+        name: file.name,
+        dataUrl,
+        tags: [],
+        note: "",
+      });
     }
     setImages((prev) => [...prev, ...loaded].slice(0, MAX_IMAGES));
-  }
-
-  async function addAsset() {
-    const assetId = Number(pickedAsset);
-    if (!Number.isFinite(assetId)) return;
-    const option = assets.find((item) => item.id === assetId);
-    if (!option) return;
-    if (images.some((image) => image.asset_id === assetId)) {
-      setMessage("这张素材已经在待识别列表中。");
-      return;
-    }
-    if (images.length >= MAX_IMAGES) {
-      setMessage(`最多选择 ${MAX_IMAGES} 张图片。`);
-      return;
-    }
-    try {
-      const response = await fetch(`/api/assets/image?asset_id=${assetId}`, {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error(`素材图片不可用（${response.status}）`);
-      const blob = await response.blob();
-      const dataUrl = await blobToDataUrl(blob);
-      setImages((prev) =>
-        [...prev, { asset_id: assetId, name: option.name, dataUrl }].slice(
-          0,
-          MAX_IMAGES,
-        ),
-      );
-      setPickedAsset("");
-      setMessage("");
-    } catch (error) {
-      setMessage(`读取素材图片失败：${String(error)}`);
-    }
   }
 
   function removeImage(index: number) {
     setImages((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function patchPick(index: number, patch: Partial<VisionPick>) {
+    setImages((prev) =>
+      prev.map((pick, i) => (i === index ? { ...pick, ...patch } : pick)),
+    );
+  }
+
   async function describe() {
     if (!selectedModel || images.length === 0) return;
     setBusy(true);
     setDescription("");
+    setSuggestedTags([]);
     setSaved(false);
+    setMessage("");
     try {
       const body: Record<string, unknown> = {
         model: selectedModel,
         prompt: promptText.trim() || null,
         images: images.map((image) => image.dataUrl),
+        want_tags: true,
       };
-      const result = await apiPost<VisionResponse>(
-        "/api/vision/describe",
-        body,
-      );
+      const result = await apiPost<VisionResponse>("/api/vision/describe", body);
       setDescription(result.description);
+      setSuggestedTags(result.tags ?? []);
       setLastModel(result.model);
       setMessage(
         `已由 ${result.model} 识别 ${result.image_count} 张图片；结果只读，未写入工作副本。`,
@@ -263,7 +352,7 @@ export default function VisionPanel() {
       <div className="candidate-heading">
         <h3>图片识别（本地视觉模型）</h3>
         <p className="candidate-subtitle">
-          选择本地 VL 模型识别图片；素材库图片可连同描述存入历史，本地上传的临时图只留在本页、不进历史。
+          在素材库点某张素材的「图生文识别」把它带到这里，或本地上传临时图；识别完可给素材打标签，临时图也能连标签一起存入素材库。
         </p>
       </div>
 
@@ -299,14 +388,6 @@ export default function VisionPanel() {
                   );
                 })}
               </select>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !pickedAsset}
-                onClick={() => void addAsset()}
-              >
-                添加素材图
-              </button>
               <label className="vision-file-button">
                 本地上传（临时）
                 <input
@@ -322,70 +403,15 @@ export default function VisionPanel() {
                 />
               </label>
             </div>
-            {assets.length > 0 ? (
-              <div className="vision-asset-picker">
-                <div className="vision-asset-grid">
-                  {assets.map((asset) => {
-                    const added = images.some(
-                      (image) => image.asset_id === asset.id,
-                    );
-                    const selected = pickedAsset === String(asset.id);
-                    return (
-                      <button
-                        key={asset.id}
-                        type="button"
-                        className={[
-                          "vision-asset-card",
-                          selected ? "selected" : "",
-                          added ? "added" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        disabled={busy || added}
-                        onClick={() =>
-                          setPickedAsset(selected ? "" : String(asset.id))
-                        }
-                        title={asset.name}
-                      >
-                        <span className="vision-asset-thumb">
-                          <img
-                            src={assetImageUrl(asset.id)}
-                            alt={asset.name}
-                            loading="lazy"
-                            onError={(event) => {
-                              event.currentTarget.style.display = "none";
-                            }}
-                          />
-                        </span>
-                        <span className="vision-asset-name">{asset.name}</span>
-                        {added && (
-                          <span className="vision-asset-badge">已添加</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
+
+            {images.length === 0 ? (
               <p className="muted">
-                素材库暂无可用图片，可点「本地上传」临时选图。
+                还没有待识别图片：去素材库详情点「图生文识别」，或点上方「本地上传」选一张临时图。
               </p>
-            )}
-            <textarea
-              className="candidate-input"
-              rows={3}
-              placeholder="想让模型重点看什么？留空则按默认视角描述主体、构图、光线与风格。"
-              value={promptText}
-              disabled={busy}
-              onChange={(event) => {
-                setPromptText(event.target.value);
-                persistParam("vision.prompt", event.target.value);
-              }}
-            />
-            {images.length > 0 && (
+            ) : (
               <div className="vision-images">
                 {images.map((image, index) => (
-                  <figure key={index}>
+                  <figure key={image.key}>
                     <img src={image.dataUrl} alt={image.name} />
                     <figcaption>
                       {image.name}
@@ -402,6 +428,18 @@ export default function VisionPanel() {
                 ))}
               </div>
             )}
+
+            <textarea
+              className="candidate-input"
+              rows={3}
+              placeholder="想让模型重点看什么？留空则按默认视角描述主体、构图、光线与风格。"
+              value={promptText}
+              disabled={busy}
+              onChange={(event) => {
+                setPromptText(event.target.value);
+                persistParam("vision.prompt", event.target.value);
+              }}
+            />
             <button
               className="candidate-submit"
               disabled={busy || !selectedModel || images.length === 0}
@@ -414,36 +452,280 @@ export default function VisionPanel() {
       )}
 
       {description && (
-        <div className="candidate-list">
-          <div className="candidate-list-head">
-            <span>识别结果（只读）</span>
-            <div className="actions">
-              {saved ? (
-                <small className="workflow-meta">已存入历史</small>
-              ) : (
-                <button
-                  onClick={() => void saveHistory()}
-                  disabled={!canSave || saveBusy}
-                  title={
-                    canSave
-                      ? "把这次识别结果连同素材引用存入历史"
-                      : "仅素材库图片可存入历史；本地上传的临时图不会归档"
-                  }
-                >
-                  {saveBusy ? "保存中…" : "存入历史"}
-                </button>
-              )}
-              <button onClick={() => void copyDescription()}>复制</button>
+        <>
+          <div className="candidate-list">
+            <div className="candidate-list-head">
+              <span>识别结果（只读）</span>
+              <div className="actions">
+                {saved ? (
+                  <small className="workflow-meta">已存入历史</small>
+                ) : (
+                  <button
+                    onClick={() => void saveHistory()}
+                    disabled={!canSave || saveBusy}
+                    title={
+                      canSave
+                        ? "把这次识别结果连同素材引用存入历史"
+                        : "只有素材库图片可以存入历史；临时图请先存入素材库"
+                    }
+                  >
+                    {saveBusy ? "保存中…" : "存入历史"}
+                  </button>
+                )}
+                <button onClick={() => void copyDescription()}>复制</button>
+              </div>
             </div>
+            <textarea readOnly rows={8} value={description} />
+            {!canSave && (
+              <small className="muted">
+                本次含本地临时图，不会进入历史；把它存入素材库后即可归档识别结果。
+              </small>
+            )}
           </div>
-          <textarea readOnly rows={8} value={description} />
-          {!canSave && (
-            <small className="muted">
-              本次含本地临时图，不会进入历史；改用素材库图片后可归档识别结果。
-            </small>
-          )}
-        </div>
+
+          <div className="vision-care">
+            <div className="vision-care-head">
+              <span>本次图片处理</span>
+              {suggestedTags.length > 0 && (
+                <small className="muted">
+                  模型建议标签：{suggestedTags.join("、")}
+                </small>
+              )}
+            </div>
+            {images.map((image, index) => (
+              <CareCard
+                key={image.key}
+                pick={image}
+                description={description}
+                suggestedTags={suggestedTags}
+                groups={groups}
+                onPatch={(patch) => patchPick(index, patch)}
+                onMessage={setMessage}
+              />
+            ))}
+          </div>
+        </>
       )}
     </section>
+  );
+}
+
+type CareCardProps = {
+  pick: VisionPick;
+  description: string;
+  suggestedTags: string[];
+  groups: AssetGroup[];
+  onPatch: (patch: Partial<VisionPick>) => void;
+  onMessage: (text: string) => void;
+};
+
+/** Existing tags first, then any model suggestion the asset does not carry. */
+function prefillTags(pick: VisionPick, suggestions: string[]): string {
+  if (pick.asset_id === null) return suggestions.join(", ");
+  const merged = [...pick.tags];
+  for (const tag of suggestions) {
+    if (!merged.includes(tag)) merged.push(tag);
+  }
+  return merged.join(", ");
+}
+
+function CareCard({
+  pick,
+  description,
+  suggestedTags,
+  groups,
+  onPatch,
+  onMessage,
+}: CareCardProps) {
+  const isAsset = pick.asset_id !== null;
+  const suggestionsKey = suggestedTags.join("|");
+  const [tagText, setTagText] = useState(() => prefillTags(pick, suggestedTags));
+  const [noteText, setNoteText] = useState(pick.note);
+  const [groupId, setGroupId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+
+  const tagsKey = pick.tags.join("|");
+  const firstRun = useRef(true);
+
+  // Re-fill the inputs when the pick turns from a temp upload into a library
+  // asset, when its stored tags change, or when a new description brings new
+  // suggestions. The very first run is skipped: mount already prefilled them.
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    setTagText(prefillTags(pick, suggestedTags));
+    setNoteText(pick.note);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick.asset_id, tagsKey, suggestionsKey]);
+
+  async function saveTags() {
+    if (!isAsset || busy) return;
+    setBusy(true);
+    setDone("");
+    try {
+      const tags = splitTags(tagText);
+      await apiPost(`/api/assets/items/${pick.asset_id}`, {
+        tags,
+        note: noteText,
+      });
+      onPatch({ tags, note: noteText });
+      setDone("已保存到素材");
+      onMessage("标签与备注已保存到素材。");
+    } catch (error) {
+      onMessage(`保存素材标签失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importIntoLibrary(withTags: boolean) {
+    if (isAsset || busy) return;
+    const { name, ext } = resolveUploadName(pick.name, pick.dataUrl);
+    if (!LIBRARY_SUFFIXES.includes(ext)) {
+      onMessage("GIF 等格式暂不支持存入素材库，请先转成 PNG / JPG / WebP。");
+      return;
+    }
+    const comma = pick.dataUrl.indexOf(",");
+    const data = comma >= 0 ? pick.dataUrl.slice(comma + 1) : pick.dataUrl;
+    if (!data) {
+      onMessage("临时图读取失败，请重新上传。");
+      return;
+    }
+    const tags = withTags ? splitTags(tagText) : [];
+    setBusy(true);
+    setDone("");
+    try {
+      const result = await apiPost<{ items: AssetItemBrief[] }>(
+        "/api/assets/import-copy",
+        {
+          files: [{ name, data }],
+          group_id: groupId ? Number(groupId) : null,
+          tags,
+          note: description,
+        },
+      );
+      const created = result.items?.[0];
+      if (!created) throw new Error("入库未返回素材记录");
+      onPatch({
+        asset_id: created.id,
+        name: created.name,
+        tags: created.tags ?? tags,
+        note: created.note ?? description,
+      });
+      setDone("已存入素材库");
+      onMessage(
+        tags.length > 0
+          ? "临时图已带标签存入素材库。"
+          : "临时图已存入素材库。",
+      );
+    } catch (error) {
+      onMessage(`存入素材库失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function appendDescription() {
+    setNoteText((prev) => (prev.trim() ? `${prev}\n\n${description}` : description));
+  }
+
+  return (
+    <div className="vision-care-card">
+      <div className="vision-care-top">
+        <span className="vision-care-name" title={pick.name}>
+          {pick.name}
+        </span>
+        <span className={`compare-badge ${isAsset ? "match" : ""}`}>
+          {isAsset ? "素材引用" : "临时图"}
+        </span>
+        {done && <small className="workflow-meta">{done}</small>}
+      </div>
+
+      {isAsset ? (
+        <>
+          <label className="vision-care-field">
+            标签（逗号分隔）
+            <input
+              type="text"
+              value={tagText}
+              disabled={busy}
+              onChange={(event) => setTagText(event.target.value)}
+              placeholder="人物, 外景"
+            />
+          </label>
+          <label className="vision-care-field">
+            备注
+            <textarea
+              rows={3}
+              value={noteText}
+              disabled={busy}
+              onChange={(event) => setNoteText(event.target.value)}
+            />
+          </label>
+          <div className="actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={appendDescription}
+            >
+              追加识别描述到备注
+            </button>
+            <button type="button" disabled={busy} onClick={() => void saveTags()}>
+              {busy ? "保存中…" : "保存到素材"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="vision-care-field">
+            标签（逗号分隔，可留空）
+            <input
+              type="text"
+              value={tagText}
+              disabled={busy}
+              onChange={(event) => setTagText(event.target.value)}
+              placeholder="留空则直接入库"
+            />
+          </label>
+          <label className="vision-care-field">
+            分组
+            <select
+              value={groupId}
+              disabled={busy}
+              onChange={(event) => setGroupId(event.target.value)}
+            >
+              <option value="">默认分组</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={busy || splitTags(tagText).length === 0}
+              onClick={() => void importIntoLibrary(true)}
+              title="标签同时写进素材库"
+            >
+              带标签入库
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void importIntoLibrary(false)}
+            >
+              直接入库
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

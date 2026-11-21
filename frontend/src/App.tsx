@@ -531,6 +531,12 @@ export default function App() {
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState("正在连接本地服务…");
   const [activePage, setActivePage] = useState<PageKey>(readStoredPage);
+  // Asset handed over from the library's "图生文" action; consumed by the
+  // vision panel on mount and cleared right after so it never re-applies.
+  const [visionSeed, setVisionSeed] = useState<{
+    asset_id: number;
+    name: string;
+  } | null>(null);
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [fontSize, setFontSize] = useState<FontSize>(readStoredFont);
 
@@ -1741,11 +1747,16 @@ export default function App() {
       ) : activePage === "writing" ? (
         <WritingAssistant />
       ) : activePage === "vision" ? (
-        <VisionPanel />
+        <VisionPanel seed={visionSeed} onSeedUsed={() => setVisionSeed(null)} />
       ) : activePage === "history" ? (
         <HistoryPanel />
       ) : activePage === "assets" ? (
-        <AssetLibrary />
+        <AssetLibrary
+          onSendToVision={(asset) => {
+            setVisionSeed({ asset_id: asset.asset_id, name: asset.name });
+            switchPage("vision");
+          }}
+        />
       ) : activePage === "loras" ? (
         <section className="panel" id="page-loras">
           <div className="section-heading">

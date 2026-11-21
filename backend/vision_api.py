@@ -43,11 +43,52 @@ DEFAULT_VISION_PROMPT = (
     "服装配饰、场景背景道具、构图视角镜头、光线色彩材质与整体风格。"
 )
 
+# Appended to the user prompt only when the caller asks for suggested tags.
+# The model is told to emit one extra trailing line; it is split off the
+# description afterwards so the saved description stays clean.
+TAG_INSTRUCTION = (
+    "\n\n描述写完后必须另起一行输出标签，不要省略。格式严格为："
+    "标签: A, B, C（3-6 个简短中文标签，每个 2-6 字，英文逗号分隔，"
+    "不加引号、不加序号、不写解释）。示例：\n标签: 人物, 半身, 冷色调"
+)
+TAG_LINE_PREFIXES = ("标签:", "标签：", "tags:", "Tags:")
+TAG_TRIM_CHARS = "。.、;；,，'\"“”‘’*#`>-_ " 
+MAX_TAGS = 8
+MAX_TAG_CHARS = 20
+
+
+def _split_tags(description: str) -> tuple[str, list[str]]:
+    """Split an optional trailing ``标签: a, b`` line off the description.
+
+    The line is looked up in the last few rows, since models sometimes append
+    a closing remark after it. Markdown emphasis around the label is ignored.
+    """
+    lines = description.rstrip().splitlines()
+    if not lines:
+        return description, []
+    for index in range(len(lines) - 1, max(-1, len(lines) - 4), -1):
+        cleaned = lines[index].strip().strip(TAG_TRIM_CHARS).strip()
+        for prefix in TAG_LINE_PREFIXES:
+            if not cleaned.lower().startswith(prefix.lower()):
+                continue
+            raw = cleaned[len(prefix) :]
+            seen: list[str] = []
+            for entry in raw.replace("，", ",").replace("、", ",").split(","):
+                name = entry.strip().strip(TAG_TRIM_CHARS)
+                if not name or len(name) > MAX_TAG_CHARS:
+                    continue
+                if name not in seen:
+                    seen.append(name)
+            body = "\n".join(lines[:index] + lines[index + 1 :]).strip()
+            return body, seen[:MAX_TAGS]
+    return description, []
+
 
 class VisionRequest(BaseModel):
     model: str = Field(min_length=1, max_length=120)
     prompt: str | None = Field(default=None, max_length=2000)
     images: list[str] = Field(min_length=1, max_length=MAX_IMAGES)
+    want_tags: bool = False
 
     @field_validator("images")
     @classmethod
@@ -224,6 +265,8 @@ def describe_image(payload: VisionRequest) -> dict[str, Any]:
         )
 
     prompt = (payload.prompt or "").strip() or DEFAULT_VISION_PROMPT
+    if payload.want_tags:
+        prompt = prompt + TAG_INSTRUCTION
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": prompt, "images": images}
     ]
@@ -246,6 +289,14 @@ def describe_image(payload: VisionRequest) -> dict[str, Any]:
             status_code=502,
             detail={"online": True, "error": "模型返回内容为空，未生成描述。"},
         )
+    tags: list[str] = []
+    if payload.want_tags:
+        description, tags = _split_tags(description)
+        if not description:
+            raise HTTPException(
+                status_code=502,
+                detail={"online": True, "error": "模型只返回了标签，未生成描述。"},
+            )
     if len(description) > MAX_DESCRIPTION_CHARS:
         raise HTTPException(
             status_code=502,
@@ -256,4 +307,5 @@ def describe_image(payload: VisionRequest) -> dict[str, Any]:
         "model": result["model"],
         "description": description,
         "image_count": len(images),
+        "tags": tags,
     }

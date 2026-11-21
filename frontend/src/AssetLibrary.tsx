@@ -35,6 +35,11 @@ type AssetItem = {
 
 type ImportMode = "copy" | "reference";
 
+type AssetLibraryProps = {
+  /** Hand one asset over to the vision page ("图生文"). */
+  onSendToVision?: (asset: { asset_id: number; name: string }) => void;
+};
+
 const STORE_GROUP = "workbench.assetGroup";
 const STORE_KEYWORD = "workbench.assetKeyword";
 const STORE_TAGS = "workbench.assetTags";
@@ -130,7 +135,7 @@ function AssetThumb({ item, onOpen }: { item: AssetItem; onOpen: () => void }) {
   );
 }
 
-export default function AssetLibrary() {
+export default function AssetLibrary({ onSendToVision }: AssetLibraryProps) {
   const [groups, setGroups] = useState<AssetGroup[] | null>(null);
   const [tags, setTags] = useState<AssetTag[] | null>(null);
   const [items, setItems] = useState<AssetItem[] | null>(null);
@@ -686,6 +691,24 @@ export default function AssetLibrary() {
                 {message && <p className={`message asset-message ${message.kind}`}>{message.text}</p>}
 
                 <div className="actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={editBusy || !editing.exists || !onSendToVision}
+                    title={
+                      editing.exists
+                        ? "把这张素材带到图片识别页做图生文"
+                        : "图片已失效，无法识别"
+                    }
+                    onClick={() =>
+                      onSendToVision?.({
+                        asset_id: editing.id,
+                        name: editing.name,
+                      })
+                    }
+                  >
+                    图生文识别
+                  </button>
                   <button type="button" className="secondary" disabled={editBusy} onClick={() => void saveDetail()}>
                     保存修改
                   </button>
