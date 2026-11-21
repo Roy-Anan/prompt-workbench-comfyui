@@ -77,7 +77,7 @@
 |---|---|
 | `model` | 必选，本地 Ollama 模型 |
 | `workflow_id` | 改为可选；空 = 不挂工作流、不读工作流上下文 |
-| `persona`（新增） | 可选自由文本，`none` = 裸模型；填已登记身份 id。画布侧不用 combo：动态选项来自后端服务，Python 节点的静态占位列表无法通过 ComfyUI 枚举校验 |
+| `persona`（新增） | 可选自由文本，`none` = 裸模型；填 `personas/` 目录下身份文件夹 id。画布侧不用 combo：动态选项来自后端服务，Python 节点的静态占位列表无法通过 ComfyUI 枚举校验 |
 | 领域设定（`prompt_profile`） | 三态：空（不注入）/ auto / 指定某套；自由文本填 Profile id |
 | `genre` / `style` | 写作类题材 / 文风，自由文本填对应 id，留空不叠加 |
 | `mode` | 固定枚举下拉；增加"无"；写作类 / 空身份下负向模式不适用 |
@@ -101,16 +101,15 @@
 
 ```
 prompt_profiles/
-  personas/            # ② 身份定位
-    manifest.json      # 身份清单：id / display_name / kind / system_file / enabled
-    <persona_id>/system.txt
+  personas/            # ② 身份定位（目录遍历：每个子文件夹一份身份）
+    <persona_id>/system.txt   # 头部 `display_name:` / `kind:` 标注类别与显示名
   genres/               # 写作类·③ 题材设定（每份一个 txt）
   styles/               # 写作类·④ 文风（每份一个 txt）
   models/<id>/rules.txt # 提示词类·③ 底模专属规则套（现有 Profile）
   templates/            # 空白骨架模板，供复制新增
 ```
 
-- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<id>/system.txt`，并在 `personas/manifest.json` 登记。
+- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<id>/system.txt`，文件夹名即 id，放入目录后自动出现在下拉，无需登记清单。
 - 新增题材 / 文风：复制 `genres/_TEMPLATE.txt` / `styles/_TEMPLATE.txt`。
 - 新增底模规则套：沿用 `templates/MODEL_RULE_TEMPLATE.txt` 与现有 Profile 发布流程。
 - 模板 id 仅允许小写字母 / 数字 / `-` / `_`；路径限定在 profile 根内，拒绝 `..` 越权。

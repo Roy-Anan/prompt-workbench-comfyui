@@ -1,5 +1,8 @@
 [PERSONA TEMPLATE · 身份 / 系统提示骨架]
-复制本文件到 personas/<persona_id>/system.txt（id 用小写字母/数字/-/_），并在 personas/manifest.json 登记。
+复制本文件到 personas/<persona_id>/system.txt（id 用小写字母/数字/-/_）。文件夹名即人设 id，放入 personas/ 目录后自动出现在下拉里，无需登记清单。
+文件头部用两行标注元数据：
+display_name: 下拉里显示的名称
+kind: prompt（提示词类，配专属规则套与正负向）/ writing（写作类，配题材与文风）
 
 ## 角色
 （这个助手是谁、负责什么、不负责什么）
@@ -13,6 +16,3 @@
 
 ## 输出格式
 - （直接给出什么形态的结果；禁止的解释、围栏、寒暄等）
-
-## 适用类别
-kind: prompt（提示词类，配专属规则套与正负向）/ writing（写作类，配题材与文风）

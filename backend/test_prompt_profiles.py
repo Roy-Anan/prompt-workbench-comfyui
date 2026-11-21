@@ -365,26 +365,8 @@ def test_candidate_falls_back_when_no_profile_matches(client, tmp_path, monkeypa
 def _write_persona(root, pid, kind, system_text, display_name="助手"):
     d = root / "personas" / pid
     d.mkdir(parents=True, exist_ok=True)
-    (d / "system.txt").write_text(system_text, encoding="utf-8")
-    manifest_path = root / "personas" / "manifest.json"
-    manifest = (
-        json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest_path.is_file()
-        else {"personas": []}
-    )
-    manifest["personas"] = [e for e in manifest["personas"] if e.get("id") != pid]
-    manifest["personas"].append(
-        {
-            "id": pid,
-            "display_name": display_name,
-            "kind": kind,
-            "system_file": f"personas/{pid}/system.txt",
-            "enabled": True,
-        }
-    )
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    header = f"display_name: {display_name}\nkind: {kind}\n"
+    (d / "system.txt").write_text(header + system_text, encoding="utf-8")
     prompt_personas._cache["key"] = None
 
 
@@ -393,6 +375,32 @@ def _write_layer(root, folder, lid, text):
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(text, encoding="utf-8")
     prompt_personas._cache["key"] = None
+
+
+def test_personas_are_scanned_from_directories(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    _write_persona(root, "prompt_assistant", "prompt", "提示词正文", "提示词助手")
+    _write_persona(root, "writing_assistant", "writing", "写作正文", "写作助手")
+
+    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
+    assert set(entries) == {"prompt_assistant", "writing_assistant"}
+    assert entries["prompt_assistant"]["kind"] == "prompt"
+    assert entries["prompt_assistant"]["display_name"] == "提示词助手"
+    assert entries["writing_assistant"]["kind"] == "writing"
+    assert entries["writing_assistant"]["enabled"] is True
+    assert entries["writing_assistant"]["exists"] is True
+
+
+def test_persona_scan_skips_invalid_dirs_and_flags_missing_text(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    (root / "personas" / "_hidden").mkdir(parents=True)
+    (root / "personas" / "Bad-Name").mkdir(parents=True)
+    (root / "personas" / "empty_slot").mkdir(parents=True)
+
+    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
+    assert "_hidden" not in entries
+    assert "Bad-Name" not in entries
+    assert entries["empty_slot"]["exists"] is False
 
 
 def _candidate_fake(monkeypatch, captured):

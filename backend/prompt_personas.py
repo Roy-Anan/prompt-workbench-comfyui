@@ -3,8 +3,11 @@
 This module complements :mod:`prompt_profiles`. It manages the selectable
 identity and writing-layer templates under the profile root:
 
-- ``personas/<id>/system.txt`` + ``personas/manifest.json`` -- selectable LLM
-  identity / system prompt, tagged ``kind`` (``prompt`` / ``writing``).
+- ``personas/<id>/system.txt`` -- selectable LLM identity / system prompt.
+  The folder name is the persona id; ``kind`` (``prompt`` / ``writing``) and
+  the display name are parsed from ``display_name:`` / ``kind:`` lines in the
+  file header. No central manifest is consulted: dropping a folder under
+  ``personas/`` is enough for it to appear in the list.
 - ``genres/*.txt`` -- writing genre settings (writing class, third slot).
 - ``styles/*.txt`` -- writing style templates (writing class, fourth slot).
 
@@ -19,7 +22,6 @@ Scope and boundaries mirror :mod:`prompt_profiles`:
 
 from __future__ import annotations
 
-import json
 import re
 import threading
 from pathlib import Path
@@ -27,7 +29,6 @@ from typing import Any
 
 import prompt_profiles
 
-MANIFEST_NAME = "manifest.json"
 PERSONAS_DIR = "personas"
 GENRES_DIR = "genres"
 STYLES_DIR = "styles"
@@ -35,6 +36,8 @@ STYLES_DIR = "styles"
 NONE_VALUE = "none"
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_META_LINE_RE = re.compile(r"^\s*(display_name|name|kind)\s*[:：]\s*(.+?)\s*$")
+_KIND_VALUES = {"prompt", "writing"}
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"key": None, "personas": [], "genres": [], "styles": []}
 
@@ -64,40 +67,32 @@ def _is_none(value: str | None) -> bool:
     return (value or "").strip().lower() in ("", NONE_VALUE)
 
 
-def _cache_key() -> tuple[Any, Any, Any]:
+def _cache_key() -> tuple[Any, Any]:
     root = root_dir()
+    personas_dir = root / PERSONAS_DIR
+    persona_key: Any
+    if personas_dir.is_dir():
+        persona_key = tuple(
+            (sub.name, sub.stat().st_mtime_ns, sub.stat().st_size)
+            for sub in sorted(personas_dir.iterdir())
+            if sub.is_dir()
+        )
+    else:
+        persona_key = None
     parts: list[Any] = []
-    for sub in (PERSONAS_DIR, GENRES_DIR, STYLES_DIR):
+    for sub in (GENRES_DIR, STYLES_DIR):
         folder = root / sub
-        if folder.is_dir():
-            stat = folder.stat()
-            parts.append((stat.st_mtime_ns, stat.st_size))
-        else:
-            parts.append(None)
-    manifest = root / PERSONAS_DIR / MANIFEST_NAME
-    mkey = (
-        manifest.stat().st_mtime_ns if manifest.is_file() else None,
-        manifest.stat().st_size if manifest.is_file() else None,
-    )
-    return mkey, tuple(parts)
+        parts.append(
+            (folder.stat().st_mtime_ns, folder.stat().st_size)
+            if folder.is_dir()
+            else None
+        )
+    return persona_key, tuple(parts)
 
 
-def _load_manifest() -> dict[str, Any]:
-    manifest_path = root_dir() / PERSONAS_DIR / MANIFEST_NAME
-    if not manifest_path.is_file():
-        return {"personas": []}
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {"personas": [], "_error": "manifest 解析失败"}
-    if not isinstance(data, dict) or not isinstance(data.get("personas"), list):
-        return {"personas": [], "_error": "manifest 结构无效"}
-    return data
-
-
-def list_personas() -> list[dict[str, Any]]:
+def list_personas(force: bool = False) -> list[dict[str, Any]]:
     """Public projection of registered personas for the dynamic list API."""
-    _ensure_cache()
+    _ensure_cache(force)
     return list(_cache["personas"])
 
 
@@ -195,25 +190,64 @@ def _extract_label(text: str, fallback: str) -> str:
     return fallback
 
 
+def _parse_persona_meta(text: str, fallback_id: str) -> tuple[str, str]:
+    """Pull ``kind`` and display name out of header ``key: value`` lines."""
+    kind = "writing"
+    display = ""
+    for line in text.splitlines():
+        match = _META_LINE_RE.match(line)
+        if not match:
+            continue
+        key, value = match.group(1).lower(), match.group(2).strip()
+        if key == "kind" and value.lower() in _KIND_VALUES:
+            kind = value.lower()
+        elif key in ("display_name", "name") and value:
+            display = value[:40]
+    if not display:
+        display = _extract_label(text, fallback_id)
+    return kind, display
+
+
+def _scan_personas() -> list[dict[str, Any]]:
+    folder = root_dir() / PERSONAS_DIR
+    entries: list[dict[str, Any]] = []
+    if not folder.is_dir():
+        return entries
+    for sub in sorted(folder.iterdir()):
+        if not sub.is_dir():
+            continue
+        pid = sub.name
+        if pid.startswith("_") or pid.startswith(".") or not _ID_RE.match(pid):
+            continue
+        system_file = sub / "system.txt"
+        text = ""
+        if system_file.is_file():
+            try:
+                text = _read_text(system_file)
+            except (OSError, UnicodeDecodeError):
+                text = ""
+        kind, display_name = _parse_persona_meta(text, pid)
+        entries.append(
+            {
+                "id": pid,
+                "display_name": display_name,
+                "kind": kind,
+                "system_file": f"{PERSONAS_DIR}/{pid}/system.txt",
+                "description": "",
+                "enabled": True,
+                "exists": bool(text.strip()),
+            }
+        )
+    return entries
+
+
 def _ensure_cache(force: bool = False) -> None:
     key = _cache_key()
     with _lock:
         if not force and _cache["key"] == key and _cache["personas"]:
             return
-        manifest = _load_manifest()
-        personas: list[dict[str, Any]] = []
-        for raw in manifest.get("personas", []):
-            if not isinstance(raw, dict):
-                continue
-            entry = dict(raw)
-            system_file = str(entry.get("system_file") or "").strip()
-            resolved = _safe_resolve(system_file) if system_file else None
-            exists = bool(resolved and resolved.is_file())
-            entry["exists"] = exists
-            entry["enabled"] = bool(entry.get("enabled", True))
-            entry.setdefault("kind", "writing")
-            personas.append(entry)
+            return
         _cache["key"] = key
-        _cache["personas"] = personas
+        _cache["personas"] = _scan_personas()
         _cache["genres"] = _scan_text_layer(GENRES_DIR)
         _cache["styles"] = _scan_text_layer(STYLES_DIR)
