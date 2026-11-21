@@ -1,0 +1,17 @@
+{
+  "display_name": "CyberRealisticPony V18.0 F16",
+  "description": "由 legacy-materials 迁移的 CyberRealisticPony V18.0 F16 规则记录。",
+  "architecture": "Pony",
+  "checkpoint_patterns": [
+    "CyberRealisticPony_V18.0_F16.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/CyberRealisticPony_V18.txt"
+}

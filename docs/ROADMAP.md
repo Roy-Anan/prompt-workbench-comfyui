@@ -701,7 +701,9 @@ R146 已落地：`WorkbenchRuleContext` 同步去工作流依赖。删除 `sourc
 
 R147 已落地：提示词工作区放开人设下拉。`WorkflowWorkbench` 去掉写死的 `prompt_assistant`，改为身份下拉，按类过滤只列提示词类身份 + 裸模型（`none`），选择写入 `workbench.selectedPersona` 本地记忆，提交回传选中值；写作助手页维持只列写作类 + 裸模型。后端 `_resolve_identity` 本就支持任意已登记 id 与裸模型，本轮仅前端放开；前端 tsc/build 绿，后端全量回归无新增失败。
 
-R148 已落地：人设 `personas/` 改为目录遍历。不再读 `personas/manifest.json` 清单，扫描 `personas/<id>/system.txt`，文件夹名即人设 id，头部 `display_name:` / `kind:` 标注显示名与类别（`prompt`/`writing`，缺省 `writing`），放入目录即自动出现在下拉；非法 id 与 `_`/`.` 开头目录跳过，缺 `system.txt` 标记 `exists=False`。配套模板去掉"登记清单"步骤并补头部标注示例；测试 helper 改为只写 system.txt，新增目录扫描 / 类别解析 / 非法目录跳过断言。规则套 `prompt_profile` 暂仍走根 manifest 登记，其遍历化涉及停用 / 版本 / 暂存 / 归档存态取舍，待另切片。
+R148 已落地：人设 `personas/` 改为目录遍历。不再读 `personas/manifest.json` 清单，扫描 `personas/<id>/system.txt`，文件夹名即人设 id，头部 `display_name:` / `kind:` 标注显示名与类别（`prompt`/`writing`，缺省 `writing`），放入目录即自动出现在下拉；非法 id 与 `_`/`.` 开头目录跳过，缺 `system.txt` 标记 `exists=False`。配套模板去掉"登记清单"步骤并补头部标注示例；测试 helper 改为只写 system.txt，新增目录扫描 / 类别解析 / 非法目录跳过断言。
+
+R149 已落地：规则套 `models/<id>/` 改为目录遍历 + 目录内可选 `meta.json`。退役根 `manifest.json`，扫描 `models/<id>/rules.txt`（必选）与同目录 `meta.json`（可选）；显示名 / 架构 / 文件名从正文头部 `Display Name` / `Base Architecture` / `Exact Checkpoint Filename` 解析兜底，meta 同名字段优先。停用 / 版本归档 / 回滚 / 删除状态落在目录内 meta 与 `archive/`，staging 发布合并 meta；内容哈希读取时实时计算，不再手工登记。13 套存量已迁移为目录内 meta.json；测试 helper 改为写目录 + meta，新增无 meta 正文解析兜底断言。维护流程见 `prompt_profiles/PROFILES_GUIDE.md`。
 
 - **M3 规则引擎**：global 级规则已由引擎三级继承装载；sets 专用/通用套优先级判定已由 R115
   落地；逐候选勾选/驳回已由 R108 落地；规则版本历史查看与回退已由 R116 落地；候选差异预览已由

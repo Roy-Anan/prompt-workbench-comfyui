@@ -28,16 +28,16 @@
 - 规则文件路径由后端安全解析，请求中不得传入任意文件路径。
 
 ## 5. 校验清单（提交前自检）
-- [ ] manifest 条目字段齐全：id、display_name、description、enabled、architecture、checkpoint_patterns、rules_file、version、source、created_at、updated_at、content_hash。
+- [ ] 规则套落在 `models/<id>/rules.txt`（id 仅小写字母/数字/`-`/`_`），需要结构化补充时同目录放可选 `meta.json`。
 - [ ] 规则文件非空，必需章节齐全。
-- [ ] 架构字段有效；checkpoint 匹配模式不与其他 Profile 冲突。
+- [ ] 架构字段有效（`meta.json` 或正文 `Base Architecture`）；checkpoint 匹配模式不与其他 Profile 冲突。
 - [ ] 重复 Profile ID 已排查。
 - [ ] 路径合法，无 `../`、绝对路径或符号链接越权。
-- [ ] 内容哈希与规则文件一致。
 - [ ] 未确认信息已隔离到 C 类，未混入确定规则。
+- 目录结构、字段含义与新增流程见上一级 `PROFILES_GUIDE.md`。
 
 ## 6. 发布与版本
-- 审核通过后由后端把 staging 规则发布到 `models/`，旧版本自动备份到 `archive/`，manifest 更新版本号与内容哈希。
+- 审核通过后由后端把 staging 规则发布到 `models/`，旧版本自动备份到 `archive/`，目录内 `meta.json` 更新版本号；内容哈希读取时实时计算，不手工登记。
 - 发布记录来源、发布日期；支持查看历史版本、对比变化与回滚。
 - 停用的 Profile 保留文件但不参与 Auto 匹配；删除需二次确认，禁止删除 Core 文件与其他 Profile 的共享文件。
 

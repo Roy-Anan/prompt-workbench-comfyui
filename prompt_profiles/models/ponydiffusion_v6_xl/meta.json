@@ -1,0 +1,17 @@
+{
+  "display_name": "Pony Diffusion V6 XL",
+  "description": "由 legacy-materials 迁移的 Pony Diffusion V6 XL 规则记录。",
+  "architecture": "Pony / SDXL 系",
+  "checkpoint_patterns": [
+    "ponyDiffusionV6XL_v6.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/PonyDiffusion_V6_XL.txt"
+}

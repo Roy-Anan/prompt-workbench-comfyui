@@ -52,38 +52,26 @@ def _write_profile(
     patterns=None,
     enabled=True,
     version="1.0.0",
+    with_meta=True,
 ):
     d = root / "models" / pid
     d.mkdir(parents=True, exist_ok=True)
     (d / "rules.txt").write_text(rules, encoding="utf-8")
-    manifest_path = root / "manifest.json"
-    manifest = (
-        json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest_path.is_file()
-        else {"version": 1, "profiles": []}
-    )
-    manifest["profiles"] = [e for e in manifest["profiles"] if e.get("id") != pid]
-    manifest["profiles"].append(
-        {
-            "id": pid,
+    if with_meta:
+        meta = {
             "display_name": pid.title(),
             "description": "",
             "enabled": enabled,
             "architecture": architecture,
             "checkpoint_patterns": patterns or [],
             "aliases": [],
-            "rules_file": f"models/{pid}/rules.txt",
             "version": version,
-            "source": "test",
-            "created_at": "2026-01-01T00:00:00+00:00",
-            "updated_at": "2026-01-01T00:00:00+00:00",
-            "content_hash": _sha(rules),
             "priority": 10,
+            "research_status": "test",
         }
-    )
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+        (d / "meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     prompt_profiles._cache["manifest_key"] = None
 
 
@@ -100,17 +88,24 @@ def test_scan_flags_missing_sections_as_warnings_not_errors(tmp_path, monkeypatc
     assert "MODEL_ARCHITECTURE" in entries["beta"]["section_warnings"]
 
 
-def test_scan_reports_hash_mismatch_as_fatal_error(tmp_path, monkeypatch):
+def test_profile_without_meta_parses_rules_header(tmp_path, monkeypatch):
     root = _make_root(tmp_path, monkeypatch)
-    _write_profile(root, "alpha", FULL_RULES, patterns=["alpha.safetensors"])
-    manifest_path = root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["profiles"][0]["content_hash"] = "deadbeef"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    header_rules = (
+        "Display Name: Header Model\n"
+        "Exact Checkpoint Filename: header-model.safetensors\n"
+        "Base Architecture: [已核实] Pony\n"
+        "[PROMPT_SYNTAX]\n"
+        "tags\n"
+    )
+    _write_profile(root, "header_model", header_rules, with_meta=False)
 
     entries = {e["id"]: e for e in prompt_profiles.scan_profiles(force=True)}
-    assert entries["alpha"]["auto_eligible"] is False
-    assert any("content_hash" in err for err in entries["alpha"]["errors"])
+    entry = entries["header_model"]
+    assert entry["architecture"] == "Pony"
+    assert entry["display_name"] == "Header Model"
+    assert entry["checkpoint_patterns"] == ["header-model.safetensors"]
+    assert entry["enabled"] is True
+    assert entry["auto_eligible"] is True
 
 
 def test_match_exact_then_architecture_then_fallback(tmp_path, monkeypatch):

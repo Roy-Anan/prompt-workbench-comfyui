@@ -10,6 +10,16 @@ The candidate system prompt is composed in three logical layers:
   3. **Existing Workflow Rules** -- the unchanged ``rule_engine`` output for the
      imported workflow; this module never replaces that layer.
 
+Storage layout (directory traversal, no central manifest):
+
+  ``models/<id>/rules.txt``   required rule body; header ``key: value`` lines
+                              provide display name / architecture / checkpoint
+                              filename as fallbacks.
+  ``models/<id>/meta.json``   optional structured override (patterns, aliases,
+                              priority, enabled, version, ...).
+  ``staging/<id>/``           unpublished drafts awaiting publish.
+  ``archive/<id>/<stamp>/``   archived previous versions.
+
 Scope and boundaries
 ---------------------
 * Pure local file I/O under the profile root. No network calls, no model
@@ -36,11 +46,31 @@ from typing import Any
 
 import architecture_normalize
 
-MANIFEST_NAME = "manifest.json"
+META_NAME = "meta.json"
+STAGING_META_NAME = "profile.json"
 CORE_REL = Path("core") / "core_system_prompt.txt"
 MODELS_DIR = "models"
 STAGING_DIR = "staging"
 ARCHIVE_DIR = "archive"
+
+# Structured fields persisted in a Profile's optional ``meta.json``. Derived
+# values (rules path, content hash, timestamps) are computed on read and are
+# not stored here.
+META_FIELDS = (
+    "display_name",
+    "description",
+    "architecture",
+    "checkpoint_patterns",
+    "aliases",
+    "priority",
+    "enabled",
+    "version",
+    "trigger_words",
+    "incompatible_architectures",
+    "author",
+    "research_status",
+    "source",
+)
 
 # Sections a rules file is expected to carry. Missing sections are recorded as
 # warnings, not fatal errors: a partially researched profile stays visible so
@@ -57,6 +87,15 @@ REQUIRED_SECTIONS = (
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _AUTO = "auto"
+
+# Header keys recognised inside ``rules.txt`` when ``meta.json`` omits a value.
+_HEADER_ALIASES: dict[str, tuple[str, ...]] = {
+    "display_name": ("display name", "名称", "display_name"),
+    "architecture": ("base architecture", "模型架构", "architecture"),
+    "checkpoint_file": ("exact checkpoint filename", "checkpoint file", "文件名"),
+}
+_BRACKET_PREFIX = re.compile(r"^\[[^\]]*\]\s*")
+_KV_RE = re.compile(r"^([^:：]+)[:：]\s*(.*)$")
 
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"manifest_key": None, "entries": []}
@@ -119,123 +158,154 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def load_manifest() -> dict[str, Any]:
-    """Read ``manifest.json``.
-
-    A missing file yields an empty manifest; a corrupt file yields an empty
-    manifest with an ``_error`` note rather than raising.
-    """
-    root = root_dir()
-    manifest_path = root / MANIFEST_NAME
-    if not manifest_path.is_file():
-        return {"version": 1, "profiles": []}
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return {"version": 1, "profiles": [], "_error": str(exc)}
-    if not isinstance(data, dict) or not isinstance(data.get("profiles"), list):
-        return {"version": 1, "profiles": [], "_error": "manifest 结构无效"}
-    data.setdefault("version", 1)
-    return data
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
 
 
-def _save_manifest(manifest: dict[str, Any]) -> None:
-    _write_json(root_dir() / MANIFEST_NAME, manifest)
+def _read_meta(model_dir: Path) -> dict[str, Any]:
+    return _read_json_file(model_dir / META_NAME)
 
 
-def _entry_errors(entry: dict[str, Any], seen_ids: set[str]) -> list[str]:
-    """Validate one manifest entry; return a list of human-readable problems."""
-    errors: list[str] = []
-    profile_id = str(entry.get("id") or "").strip()
-    if not profile_id:
-        errors.append("缺少 id")
-        return errors
-    if not _ID_RE.match(profile_id):
-        errors.append(f"id 非法：{profile_id}（仅允许小写字母/数字/-/_）")
-    if profile_id in seen_ids:
-        errors.append(f"重复 Profile id：{profile_id}")
+def _write_meta(model_dir: Path, meta: dict[str, Any]) -> None:
+    clean = {k: v for k, v in meta.items() if k in META_FIELDS}
+    _write_json(model_dir / META_NAME, clean)
 
-    rules_file = str(entry.get("rules_file") or "").strip()
-    if not rules_file:
-        errors.append("缺少 rules_file")
-    else:
-        resolved = _safe_resolve(rules_file)
-        if resolved is None:
-            errors.append(f"rules_file 路径越权：{rules_file}")
-        elif not resolved.is_file():
-            errors.append(f"规则文件不存在：{rules_file}")
-        else:
-            try:
-                text = _read_text(resolved)
-                if not text.strip():
-                    errors.append("规则文件为空")
-                else:
-                    actual_hash = _sha256_text(text)
-                    recorded = str(entry.get("content_hash") or "").strip()
-                    if recorded and recorded != actual_hash:
-                        errors.append("content_hash 与规则文件不一致")
-            except (OSError, UnicodeDecodeError) as exc:
-                errors.append(f"规则文件读取失败：{exc}")
 
-    if not str(entry.get("architecture") or "").strip():
-        errors.append("缺少 architecture")
-    return errors
+def _parse_rules_header(text: str) -> dict[str, str]:
+    """Pull display name / architecture / checkpoint file from ``key: value``
+    header lines. Bracket markers such as ``[已核实]`` are stripped from the
+    value; unknown lines are ignored."""
+    parsed: dict[str, str] = {"display_name": "", "architecture": "", "checkpoint_file": ""}
+    for line in text.splitlines():
+        match = _KV_RE.match(line.strip())
+        if not match:
+            continue
+        key = match.group(1).strip().lower()
+        value = _BRACKET_PREFIX.sub("", match.group(2).strip()).strip()
+        for field, aliases in _HEADER_ALIASES.items():
+            if key in aliases:
+                parsed[field] = value
+    return parsed
 
 
 def _section_warnings(text: str) -> list[str]:
     return [section for section in REQUIRED_SECTIONS if f"[{section}]" not in text]
 
 
-def scan_profiles(force: bool = False) -> list[dict[str, Any]]:
-    """Scan the manifest and validate every registered Profile.
+def _build_entry(profile_id: str, model_dir: Path, seen_ids: set[str]) -> dict[str, Any]:
+    """Assemble one Profile entry from its ``rules.txt`` + optional ``meta.json``."""
+    rules_path = model_dir / "rules.txt"
+    exists = rules_path.is_file()
+    text = ""
+    content_hash = ""
+    warnings: list[str] = []
+    if exists:
+        try:
+            text = _read_text(rules_path)
+            if text.strip():
+                content_hash = _sha256_text(text)
+                warnings = _section_warnings(text)
+            else:
+                exists = False
+        except (OSError, UnicodeDecodeError):
+            exists = False
 
-    Results are cached per manifest mtime/size; ``force`` bypasses the cache.
-    Each returned entry carries computed ``errors``, ``exists``,
+    meta = _read_meta(model_dir)
+    header = _parse_rules_header(text) if text else {}
+
+    checkpoint_file = header.get("checkpoint_file", "")
+    patterns = meta.get("checkpoint_patterns")
+    if not isinstance(patterns, list):
+        patterns = []
+    patterns = [str(p) for p in patterns if str(p).strip()]
+    if not patterns and checkpoint_file:
+        patterns = [checkpoint_file]
+
+    aliases = meta.get("aliases")
+    if not isinstance(aliases, list):
+        aliases = []
+    aliases = [str(a) for a in aliases if str(a).strip()]
+
+    trigger_words = meta.get("trigger_words")
+    if not isinstance(trigger_words, list):
+        trigger_words = []
+    incompatible = meta.get("incompatible_architectures")
+    if not isinstance(incompatible, list):
+        incompatible = []
+
+    entry: dict[str, Any] = {
+        "id": profile_id,
+        "display_name": str(meta.get("display_name") or header.get("display_name") or profile_id),
+        "description": str(meta.get("description") or ""),
+        "architecture": str(meta.get("architecture") or header.get("architecture") or ""),
+        "checkpoint_patterns": patterns,
+        "aliases": aliases,
+        "rules_file": f"{MODELS_DIR}/{profile_id}/rules.txt",
+        "version": str(meta.get("version") or ""),
+        "source": str(meta.get("source") or "manual"),
+        "enabled": bool(meta.get("enabled", True)),
+        "priority": int(meta.get("priority") or 0),
+        "author": str(meta.get("author") or ""),
+        "research_status": str(meta.get("research_status") or ""),
+        "trigger_words": trigger_words,
+        "incompatible_architectures": incompatible,
+        "exists": exists,
+        "content_hash": content_hash,
+        "section_warnings": warnings,
+    }
+
+    errors: list[str] = []
+    if profile_id in seen_ids:
+        errors.append(f"重复 Profile id：{profile_id}")
+    seen_ids.add(profile_id)
+    if not exists:
+        errors.append("规则文件缺失或为空：rules.txt")
+    if not entry["architecture"]:
+        errors.append("缺少 architecture")
+    entry["errors"] = errors
+    entry["auto_eligible"] = bool(entry["enabled"] and exists and not errors)
+    return entry
+
+
+def scan_profiles(force: bool = False) -> list[dict[str, Any]]:
+    """Scan ``models/`` and validate every Profile directory.
+
+    Results are cached per model directory mtime/size; ``force`` bypasses the
+    cache. Each returned entry carries computed ``errors``, ``exists``,
     ``content_hash`` and ``auto_eligible`` fields.
     """
     root = root_dir()
-    manifest_path = root / MANIFEST_NAME
-    key = (
-        manifest_path.stat().st_mtime_ns if manifest_path.is_file() else None,
-        manifest_path.stat().st_size if manifest_path.is_file() else None,
-    )
+    models_dir = root / MODELS_DIR
+    key: Any
+    if models_dir.is_dir():
+        key = tuple(
+            (sub.name, sub.stat().st_mtime_ns, sub.stat().st_size)
+            for sub in sorted(models_dir.iterdir())
+            if sub.is_dir()
+        )
+    else:
+        key = None
+
     with _lock:
         if not force and _cache["manifest_key"] == key and _cache["entries"]:
             return list(_cache["entries"])
 
-        manifest = load_manifest()
-        seen_ids: set[str] = set()
         entries: list[dict[str, Any]] = []
-        for raw in manifest.get("profiles", []):
-            if not isinstance(raw, dict):
-                continue
-            entry = dict(raw)
-            errors = _entry_errors(entry, seen_ids)
-            profile_id = str(entry.get("id") or "").strip()
-            if profile_id:
-                seen_ids.add(profile_id)
-
-            rules_file = str(entry.get("rules_file") or "").strip()
-            resolved = _safe_resolve(rules_file) if rules_file else None
-            exists = bool(resolved and resolved.is_file())
-            actual_hash = ""
-            warnings: list[str] = []
-            if exists:
-                try:
-                    text = _read_text(resolved)
-                    actual_hash = _sha256_text(text)
-                    warnings = _section_warnings(text)
-                except (OSError, UnicodeDecodeError):
-                    exists = False
-
-            entry["exists"] = exists
-            entry["content_hash"] = actual_hash or entry.get("content_hash", "")
-            entry["section_warnings"] = warnings
-            entry["errors"] = errors
-            entry["auto_eligible"] = bool(
-                entry.get("enabled", True) and exists and not errors
-            )
-            entries.append(entry)
+        seen_ids: set[str] = set()
+        if models_dir.is_dir():
+            for sub in sorted(models_dir.iterdir()):
+                if not sub.is_dir():
+                    continue
+                pid = sub.name
+                if pid.startswith("_") or pid.startswith(".") or not _ID_RE.match(pid):
+                    continue
+                entries.append(_build_entry(pid, sub, seen_ids))
 
         _cache["manifest_key"] = key
         _cache["entries"] = entries
@@ -450,13 +520,11 @@ def compose_system_prompt(
 
 
 def _staging_dir(profile_id: str) -> Path | None:
-    resolved = _safe_resolve(Path(STAGING_DIR) / profile_id)
-    return resolved
+    return _safe_resolve(Path(STAGING_DIR) / profile_id)
 
 
 def _model_dir(profile_id: str) -> Path | None:
-    resolved = _safe_resolve(Path(MODELS_DIR) / profile_id)
-    return resolved
+    return _safe_resolve(Path(MODELS_DIR) / profile_id)
 
 
 def _archive_dir(profile_id: str) -> Path | None:
@@ -474,7 +542,7 @@ def list_staging() -> list[dict[str, Any]]:
         if not child.is_dir():
             continue
         rules = child / "rules.txt"
-        meta = child / "profile.json"
+        meta = child / STAGING_META_NAME
         entry: dict[str, Any] = {
             "id": child.name,
             "has_rules": rules.is_file(),
@@ -498,23 +566,16 @@ def list_staging() -> list[dict[str, Any]]:
 
 
 def _read_staging_meta(staging_dir: Path) -> dict[str, Any]:
-    meta_path = staging_dir / "profile.json"
-    if not meta_path.is_file():
-        return {}
-    try:
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
+    return _read_json_file(staging_dir / STAGING_META_NAME)
 
 
 def publish_from_staging(profile_id: str) -> dict[str, Any]:
     """Promote a staged Profile into ``models/`` after local validation.
 
     The previous published version is archived before being overwritten. The
-    manifest entry is created or updated with the new content hash and
-    timestamp. Raises ``FileNotFoundError`` / ``ValueError`` for callers to map
-    to HTTP errors.
+    target ``meta.json`` merges the existing live meta with the staging meta;
+    the version is taken from staging or auto patch-bumped. Raises
+    ``FileNotFoundError`` / ``ValueError`` for callers to map to HTTP errors.
     """
     profile_id = profile_id.strip()
     if not _ID_RE.match(profile_id):
@@ -533,73 +594,49 @@ def publish_from_staging(profile_id: str) -> dict[str, Any]:
     missing = _section_warnings(rules_text)
     content_hash = _sha256_text(rules_text)
 
-    manifest = load_manifest()
-    existing = next(
-        (e for e in manifest.get("profiles", []) if e.get("id") == profile_id),
-        None,
-    )
-    meta = _read_staging_meta(staging)
+    model_dir = _model_dir(profile_id)
+    assert model_dir is not None
+    existing_meta = _read_meta(model_dir) if model_dir.is_dir() else {}
+    staging_meta = _read_staging_meta(staging)
+    had_live = model_dir.is_dir() and (model_dir / "rules.txt").is_file()
 
     # Archive the currently published version before overwriting it.
-    model_dir = _model_dir(profile_id)
-    if model_dir and model_dir.is_dir():
+    if had_live:
         archive_root = _archive_dir(profile_id)
         assert archive_root is not None
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         archive_slot = archive_root / stamp
         archive_slot.mkdir(parents=True, exist_ok=True)
         old_rules = model_dir / "rules.txt"
+        old_hash = ""
         if old_rules.is_file():
             shutil.copy2(old_rules, archive_slot / "rules.txt")
+            try:
+                old_hash = _sha256_text(_read_text(old_rules))
+            except (OSError, UnicodeDecodeError):
+                old_hash = ""
         _write_json(
             archive_slot / "meta.json",
             {
                 "id": profile_id,
                 "archived_at": _now_iso(),
-                "version": (existing or {}).get("version", ""),
-                "content_hash": (existing or {}).get("content_hash", ""),
+                "version": existing_meta.get("version", ""),
+                "content_hash": old_hash,
             },
         )
 
-    target_dir = _model_dir(profile_id)
-    assert target_dir is not None
-    target_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(rules_src, target_dir / "rules.txt")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(rules_src, model_dir / "rules.txt")
 
-    previous_version = str((existing or {}).get("version") or "0.0.0")
-    new_version = str(meta.get("version") or _bump_patch(previous_version))
-    entry = dict(existing or {})
-    entry.update(
-        {
-            "id": profile_id,
-            "display_name": meta.get("display_name") or entry.get("display_name") or profile_id,
-            "description": meta.get("description") or entry.get("description", ""),
-            "enabled": True,
-            "architecture": meta.get("architecture") or entry.get("architecture") or "通用",
-            "checkpoint_patterns": meta.get("checkpoint_patterns")
-            or entry.get("checkpoint_patterns", []),
-            "aliases": meta.get("aliases") or entry.get("aliases", []),
-            "rules_file": f"{MODELS_DIR}/{profile_id}/rules.txt",
-            "version": new_version,
-            "source": meta.get("source") or entry.get("source", "manual"),
-            "created_at": entry.get("created_at") or _now_iso(),
-            "updated_at": _now_iso(),
-            "content_hash": content_hash,
-            "trigger_words": meta.get("trigger_words") or entry.get("trigger_words", []),
-            "incompatible_architectures": meta.get("incompatible_architectures")
-            or entry.get("incompatible_architectures", []),
-            "priority": int(meta.get("priority") or entry.get("priority", 0)),
-            "author": meta.get("author") or entry.get("author", ""),
-            "research_status": meta.get("research_status") or entry.get("research_status", "legacy"),
-        }
-    )
-
-    if existing is None:
-        manifest.setdefault("profiles", []).append(entry)
-    else:
-        index = manifest["profiles"].index(existing)
-        manifest["profiles"][index] = entry
-    _save_manifest(manifest)
+    previous_version = str(existing_meta.get("version") or "0.0.0")
+    new_version = str(staging_meta.get("version") or _bump_patch(previous_version))
+    merged = dict(existing_meta)
+    for field in META_FIELDS:
+        if field in staging_meta:
+            merged[field] = staging_meta[field]
+    merged["version"] = new_version
+    merged["enabled"] = True
+    _write_meta(model_dir, merged)
 
     # Clear the staged copy after a successful publish.
     shutil.rmtree(staging, ignore_errors=True)
@@ -610,7 +647,7 @@ def publish_from_staging(profile_id: str) -> dict[str, Any]:
         "version": new_version,
         "content_hash": content_hash,
         "section_warnings": missing,
-        "archived_previous": bool(model_dir and model_dir.is_dir()),
+        "archived_previous": had_live,
     }
 
 
@@ -623,15 +660,14 @@ def _bump_patch(version: str) -> str:
 
 
 def set_enabled(profile_id: str, enabled: bool) -> dict[str, Any]:
-    manifest = load_manifest()
-    for entry in manifest.get("profiles", []):
-        if entry.get("id") == profile_id:
-            entry["enabled"] = bool(enabled)
-            entry["updated_at"] = _now_iso()
-            _save_manifest(manifest)
-            _cache["manifest_key"] = None
-            return {"id": profile_id, "enabled": bool(enabled)}
-    raise FileNotFoundError(f"Profile 不存在：{profile_id}")
+    model_dir = _model_dir(profile_id)
+    if model_dir is None or not model_dir.is_dir():
+        raise FileNotFoundError(f"Profile 不存在：{profile_id}")
+    meta = _read_meta(model_dir)
+    meta["enabled"] = bool(enabled)
+    _write_meta(model_dir, meta)
+    _cache["manifest_key"] = None
+    return {"id": profile_id, "enabled": bool(enabled)}
 
 
 def list_versions(profile_id: str) -> list[dict[str, Any]]:
@@ -641,13 +677,7 @@ def list_versions(profile_id: str) -> list[dict[str, Any]]:
         for slot in sorted(archive_root.iterdir(), reverse=True):
             if not slot.is_dir():
                 continue
-            meta_path = slot / "meta.json"
-            meta: dict[str, Any] = {}
-            if meta_path.is_file():
-                try:
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                    meta = {}
+            meta = _read_json_file(slot / "meta.json")
             versions.append(
                 {
                     "stamp": slot.name,
@@ -672,7 +702,8 @@ def rollback(profile_id: str, stamp: str) -> dict[str, Any]:
 
     # Back up the live version before restoring.
     model_dir = _model_dir(profile_id)
-    if model_dir and model_dir.is_dir():
+    assert model_dir is not None
+    if model_dir.is_dir():
         archive_root = _archive_dir(profile_id)
         assert archive_root is not None
         backup_slot = archive_root / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
@@ -681,35 +712,25 @@ def rollback(profile_id: str, stamp: str) -> dict[str, Any]:
         if live_rules.is_file():
             shutil.copy2(live_rules, backup_slot / "rules.txt")
 
-    target_dir = _model_dir(profile_id)
-    assert target_dir is not None
-    target_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(rules_src, target_dir / "rules.txt")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(rules_src, model_dir / "rules.txt")
     rules_text = _read_text(rules_src)
     content_hash = _sha256_text(rules_text)
 
-    meta_path = archive_slot / "meta.json"
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            meta = {}
-
-    manifest = load_manifest()
-    for entry in manifest.get("profiles", []):
-        if entry.get("id") == profile_id:
-            entry["version"] = meta.get("version", entry.get("version", ""))
-            entry["content_hash"] = content_hash
-            entry["updated_at"] = _now_iso()
-            _save_manifest(manifest)
-            _cache["manifest_key"] = None
-            return {"id": profile_id, "restored": stamp, "version": entry["version"]}
-    raise FileNotFoundError(f"Profile 不存在：{profile_id}")
+    archived_meta = _read_json_file(archive_slot / "meta.json")
+    # Restore the archived meta where present; keep other live meta fields.
+    live_meta = _read_meta(model_dir)
+    for field in META_FIELDS:
+        if field in archived_meta:
+            live_meta[field] = archived_meta[field]
+    live_meta["version"] = archived_meta.get("version", live_meta.get("version", ""))
+    _write_meta(model_dir, live_meta)
+    _cache["manifest_key"] = None
+    return {"id": profile_id, "restored": stamp, "version": live_meta.get("version", "")}
 
 
 def delete_profile(profile_id: str, confirm: bool) -> dict[str, Any]:
-    """Remove a Profile's model dir, archive entries and manifest entry.
+    """Remove a Profile's model dir, archive entries and staging copy.
 
     Refuses unless ``confirm`` is true. The Core prompt file is never a Profile
     and cannot be deleted through this function.
@@ -719,24 +740,18 @@ def delete_profile(profile_id: str, confirm: bool) -> dict[str, Any]:
     if not _ID_RE.match(profile_id):
         raise ValueError(f"非法 Profile id：{profile_id}")
 
-    manifest = load_manifest()
-    existing = next(
-        (e for e in manifest.get("profiles", []) if e.get("id") == profile_id),
-        None,
-    )
-    if existing is None:
+    model_dir = _model_dir(profile_id)
+    exists = bool(model_dir and model_dir.is_dir())
+    if not exists:
         raise FileNotFoundError(f"Profile 不存在：{profile_id}")
 
-    model_dir = _model_dir(profile_id)
-    if model_dir and model_dir.is_dir():
-        shutil.rmtree(model_dir, ignore_errors=True)
+    shutil.rmtree(model_dir, ignore_errors=True)
     archive_root = _archive_dir(profile_id)
     if archive_root and archive_root.is_dir():
         shutil.rmtree(archive_root, ignore_errors=True)
+    staging_dir = _staging_dir(profile_id)
+    if staging_dir and staging_dir.is_dir():
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
-    manifest["profiles"] = [
-        e for e in manifest.get("profiles", []) if e.get("id") != profile_id
-    ]
-    _save_manifest(manifest)
     _cache["manifest_key"] = None
     return {"id": profile_id, "deleted": True}

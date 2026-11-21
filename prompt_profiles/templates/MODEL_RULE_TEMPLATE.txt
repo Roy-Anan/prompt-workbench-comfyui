@@ -1,10 +1,11 @@
 [IDENTITY]
-模型名称：
-版本：
-身份说明：
+Display Name: （下拉里显示的名称）
+Exact Checkpoint Filename: （本地 checkpoint 文件名，用于自动精确匹配）
+Version:
+Author / Model Card:
 
 [MODEL_ARCHITECTURE]
-模型架构 / 基础体系：
+Base Architecture: （SD1.5 / SDXL 1.0 / Pony / Illustrious SDXL 系 等）
 基座模型：
 模型类型（Checkpoint / LoRA / VAE 等）：
 

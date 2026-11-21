@@ -1,0 +1,17 @@
+{
+  "display_name": "RH Illustrious 2.5D V1",
+  "description": "由 legacy-materials 迁移的 RH Illustrious 2.5D V1 规则记录。",
+  "architecture": "微调自 IL-XL",
+  "checkpoint_patterns": [
+    "RH_Illustrious_2.5D_V1.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/RH_Illustrious_2.5D_V1.txt"
+}

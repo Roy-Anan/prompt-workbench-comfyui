@@ -1,0 +1,17 @@
+{
+  "display_name": "WAI Illustrious SDXL v1.70",
+  "description": "由 legacy-materials 迁移的 WAI Illustrious SDXL v1.70 规则记录。",
+  "architecture": "Illustrious SDXL 系",
+  "checkpoint_patterns": [
+    "waiIllustriousSDXL_v170.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/WaiIllustrious_v170.txt"
+}

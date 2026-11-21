@@ -1,0 +1,17 @@
+{
+  "display_name": "Juggernaut XL Ragnarok",
+  "description": "由 legacy-materials 迁移的 Juggernaut XL Ragnarok 规则记录。",
+  "architecture": "SDXL",
+  "checkpoint_patterns": [
+    "juggernautXL_ragnarokBy.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/JuggernautXL_Ragnarok.txt"
+}

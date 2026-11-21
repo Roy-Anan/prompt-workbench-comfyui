@@ -1,0 +1,17 @@
+{
+  "display_name": "GhostMix V2.0",
+  "description": "由 legacy-materials 迁移的 GhostMix V2.0 规则记录。",
+  "architecture": "SD1.5",
+  "checkpoint_patterns": [
+    "GhostMix_v2.0.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/GhostMix_V2.txt"
+}

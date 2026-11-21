@@ -1,0 +1,17 @@
+{
+  "display_name": "Anything V5",
+  "description": "由 legacy-materials 迁移的 Anything V5 规则记录。",
+  "architecture": "SD1.5",
+  "checkpoint_patterns": [
+    "anything-v5.safetensors"
+  ],
+  "aliases": [],
+  "priority": 10,
+  "enabled": true,
+  "version": "1.0.0",
+  "trigger_words": [],
+  "incompatible_architectures": [],
+  "author": "",
+  "research_status": "legacy",
+  "source": "legacy-materials/profiles/Anything_V5.txt"
+}
