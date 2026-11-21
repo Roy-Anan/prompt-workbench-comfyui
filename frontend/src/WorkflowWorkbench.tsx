@@ -720,8 +720,15 @@ export default function WorkflowWorkbench({
     readStoredParam("workbench.selectedProfile") || "auto",
   );
   const [personas, setPersonas] = useState<Persona[]>([]);
-  // 工作流工作区固定使用提示词助手身份；写作/裸模型入口在独立「写作助手」页签。
-  const selectedPersona = "prompt_assistant";
+  // 提示词工作区只列提示词类身份与裸模型；写作类身份在独立「写作助手」页签。
+  const [selectedPersona, setSelectedPersona] = useState(() => {
+    const stored = readStoredParam("workbench.selectedPersona");
+    // 旧记忆若指向写作类身份，回退提示词助手；本页只保留提示词类与裸模型。
+    return stored === "writing_assistant"
+      ? "prompt_assistant"
+      : stored || "prompt_assistant";
+  });
+  const promptPersonas = personas.filter((p) => p.kind !== "writing");
   const [genres, setGenres] = useState<LayerItem[]>([]);
   const [selectedGenre, setSelectedGenre] = useState(
     () => readStoredParam("workbench.selectedGenre") || "",
@@ -1134,8 +1141,8 @@ export default function WorkflowWorkbench({
       if (numCtx !== null) body.num_ctx = numCtx;
       if (lockedFragments.length) body.locked_fragments = lockedFragments;
 
-      // 工作区固定提示词助手身份，不再提供身份切换。
-      body.persona = "prompt_assistant";
+      // 提示词工作区可选提示词类身份或裸模型；写作类身份走独立写作助手页签。
+      body.persona = (selectedPersona || "none").trim() || "none";
 
       // Profile slot applies to prompt-class identities only. Three states:
       // auto (default, omitted), explicit id, or none (skip the layer).
@@ -2516,6 +2523,29 @@ export default function WorkflowWorkbench({
                             </option>
                           );
                         })}
+                      </select>
+                      <select
+                        value={selectedPersona}
+                        disabled={busy || candidateBusy}
+                        onChange={(event) => {
+                          setSelectedPersona(event.target.value);
+                          persistParam(
+                            "workbench.selectedPersona",
+                            event.target.value,
+                          );
+                        }}
+                        title="LLM 身份定位；裸模型表示不注入身份系统提示词"
+                      >
+                        <option value="none">裸模型（不注入身份）</option>
+                        {promptPersonas.map((persona) => (
+                          <option
+                            key={persona.id}
+                            value={persona.id}
+                            disabled={persona.enabled === false}
+                          >
+                            {persona.display_name}
+                          </option>
+                        ))}
                       </select>
                       {!isWritingIdentity && (
                         <select

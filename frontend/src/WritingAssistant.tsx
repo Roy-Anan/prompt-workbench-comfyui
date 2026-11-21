@@ -170,7 +170,7 @@ export default function WritingAssistant() {
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
-  // 本页只列出写作类身份；提示词类助手固定在工作流工作区。
+  // 本页只列出写作类身份；提示词类助手在工作流工作区。
   const writingPersonas = personas.filter((p) => p.kind !== "prompt");
   const candidateModeOptions = CANDIDATE_MODE_OPTIONS;
 
