@@ -357,23 +357,10 @@ def test_candidate_falls_back_when_no_profile_matches(client, tmp_path, monkeypa
     assert body["system_prompt_layers"]["core"] is True
 
 
-def _write_persona(
-    root,
-    pid,
-    kind,
-    system_text,
-    display_name="助手",
-    nested=True,
-    header_kind=True,
-    folder_kind=None,
-):
-    parent = folder_kind if folder_kind is not None else kind
-    d = root / "personas" / (parent if nested else "") / pid
+def _write_persona(root, name, kind, system_text):
+    d = root / "personas" / kind
     d.mkdir(parents=True, exist_ok=True)
-    header = f"display_name: {display_name}\n"
-    if header_kind:
-        header += f"kind: {kind}\n"
-    (d / "system.txt").write_text(header + system_text, encoding="utf-8")
+    (d / f"{name}.txt").write_text(system_text, encoding="utf-8")
     prompt_personas._cache["key"] = None
 
 
@@ -384,60 +371,35 @@ def _write_layer(root, folder, lid, text):
     prompt_personas._cache["key"] = None
 
 
-def test_personas_are_scanned_from_directories(tmp_path, monkeypatch):
+def test_personas_are_scanned_from_type_folders(tmp_path, monkeypatch):
     root = _make_root(tmp_path, monkeypatch)
-    _write_persona(root, "prompt_assistant", "prompt", "提示词正文", "提示词助手")
-    _write_persona(root, "writing_assistant", "writing", "写作正文", "写作助手")
+    _write_persona(root, "提示词助手", "prompt", "提示词正文")
+    _write_persona(root, "写作助手", "writing", "写作正文")
 
     entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
-    assert set(entries) == {"prompt_assistant", "writing_assistant"}
-    assert entries["prompt_assistant"]["kind"] == "prompt"
-    assert entries["prompt_assistant"]["display_name"] == "提示词助手"
-    assert entries["writing_assistant"]["kind"] == "writing"
-    assert entries["writing_assistant"]["enabled"] is True
-    assert entries["writing_assistant"]["exists"] is True
+    assert set(entries) == {"提示词助手", "写作助手"}
+    prompt_entry = entries["提示词助手"]
+    assert prompt_entry["kind"] == "prompt"
+    assert prompt_entry["display_name"] == "提示词助手"
+    assert prompt_entry["system_file"] == "personas/prompt/提示词助手.txt"
+    writing_entry = entries["写作助手"]
+    assert writing_entry["kind"] == "writing"
+    assert writing_entry["enabled"] is True
+    assert writing_entry["exists"] is True
 
 
-def test_persona_kind_falls_back_to_parent_folder(tmp_path, monkeypatch):
+def test_persona_scan_skips_hidden_and_empty_files(tmp_path, monkeypatch):
     root = _make_root(tmp_path, monkeypatch)
-    # 两层目录但头部不写 kind：类型由父目录 prompt/、writing/ 决定。
-    _write_persona(root, "photo_prompt", "prompt", "画面描述", "写实提示词", header_kind=False)
-    _write_persona(root, "story_writer", "writing", "故事正文", "故事作者", header_kind=False)
-
-    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
-    assert entries["photo_prompt"]["kind"] == "prompt"
-    assert entries["story_writer"]["kind"] == "writing"
-
-
-def test_persona_header_kind_overrides_parent_folder(tmp_path, monkeypatch):
-    root = _make_root(tmp_path, monkeypatch)
-    # 放在 writing/ 父目录下，但头部显式标 prompt：头部覆盖父目录。
-    _write_persona(root, "mismatch", "prompt", "正文", "覆盖身份", folder_kind="writing")
-
-    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
-    assert entries["mismatch"]["kind"] == "prompt"
-    assert entries["mismatch"]["system_file"] == "personas/writing/mismatch/system.txt"
-
-
-def test_flat_persona_layout_still_supported(tmp_path, monkeypatch):
-    root = _make_root(tmp_path, monkeypatch)
-    _write_persona(root, "legacy_writer", "writing", "旧扁平正文", "旧写作", nested=False)
-
-    entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
-    assert entries["legacy_writer"]["kind"] == "writing"
-    assert entries["legacy_writer"]["system_file"] == "personas/legacy_writer/system.txt"
-
-
-def test_persona_scan_skips_invalid_dirs_and_flags_missing_text(tmp_path, monkeypatch):
-    root = _make_root(tmp_path, monkeypatch)
-    (root / "personas" / "_hidden").mkdir(parents=True)
-    (root / "personas" / "Bad-Name").mkdir(parents=True)
-    (root / "personas" / "empty_slot").mkdir(parents=True)
+    writing_dir = root / "personas" / "writing"
+    writing_dir.mkdir(parents=True)
+    (writing_dir / "_hidden.txt").write_text("隐藏", encoding="utf-8")
+    (writing_dir / ".dot.txt").write_text("点开头", encoding="utf-8")
+    (writing_dir / "空文件.txt").write_text("   ", encoding="utf-8")
 
     entries = {e["id"]: e for e in prompt_personas.list_personas(force=True)}
     assert "_hidden" not in entries
-    assert "Bad-Name" not in entries
-    assert entries["empty_slot"]["exists"] is False
+    assert ".dot" not in entries
+    assert entries["空文件"]["exists"] is False
 
 
 def _candidate_fake(monkeypatch, captured):

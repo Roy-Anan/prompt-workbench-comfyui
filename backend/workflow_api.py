@@ -710,7 +710,7 @@ def _resolve_identity(payload: PromptCandidateRequest) -> tuple[str, dict[str, A
     - ``persona`` absent (None): legacy fallback to the bundled Core generic
       rules, treated as prompt class (keeps old callers working).
     - ``""`` / ``"none"``: bare model, no identity layer injected.
-    - other value: resolve a persona folder under ``personas/``.
+    - other value: resolve a persona txt under ``personas/<kind>/``.
     """
     raw = payload.persona
     if raw is None:

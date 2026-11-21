@@ -1,6 +1,3 @@
-[PERSONA · PROMPT ASSISTANT]
-display_name: 提示词助手
-kind: prompt
 本身份用于绘图提示词候选生成；模型专属规则与工作流动态技术规则在另外两层注入。
 
 ## 角色

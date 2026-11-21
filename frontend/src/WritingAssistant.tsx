@@ -14,6 +14,13 @@ const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "bilingual", label: "中英对照" },
 ];
 
+// 旧版英文人设 id 迁移到新的中文文件名 id；提示词类身份串到本页回退裸模型。
+const LEGACY_PERSONA_IDS: Record<string, string> = {
+  prompt_assistant: "none",
+  writing_assistant: "写作助手",
+  polish_assistant: "润色改写助手",
+};
+
 function readStoredParam(key: string): string {
   try {
     return localStorage.getItem(key) || "";
@@ -135,7 +142,7 @@ export default function WritingAssistant() {
   const [selectedPersona, setSelectedPersona] = useState(() => {
     const stored = readStoredParam("writing.selectedPersona");
     // 旧记忆若指向提示词类身份，回退裸模型；本页只保留写作类与裸模型。
-    return stored === "prompt_assistant" ? "none" : stored || "none";
+    return (LEGACY_PERSONA_IDS[stored] ?? stored) || "none";
   });
   const [genres, setGenres] = useState<LayerItem[]>([]);
   const [selectedGenre, setSelectedGenre] = useState(() =>
@@ -227,6 +234,15 @@ export default function WritingAssistant() {
     void loadGenres();
     void loadStyles();
   }, []);
+
+  // 人设列表就绪后，记忆值若已失效（改名 / 删除 / 跨类串入）回退裸模型。
+  useEffect(() => {
+    if (!selectedPersona || selectedPersona === "none") return;
+    if (!writingPersonas.some((p) => p.id === selectedPersona)) {
+      setSelectedPersona("none");
+      persistParam("writing.selectedPersona", "none");
+    }
+  }, [writingPersonas, selectedPersona]);
 
   async function generateCandidate() {
     if (!selectedModel) return;

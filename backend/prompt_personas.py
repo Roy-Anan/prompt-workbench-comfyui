@@ -3,14 +3,11 @@
 This module complements :mod:`prompt_profiles`. It manages the selectable
 identity and writing-layer templates under the profile root:
 
-- ``personas/<kind>/<id>/system.txt`` -- selectable LLM identity / system
-  prompt. The folder name is the persona id; the parent ``prompt`` / ``writing``
-  folder determines the kind. A ``kind:`` line in the file header overrides the
-  parent folder when present; a flat ``personas/<id>/system.txt`` layout is
-  still accepted, with the kind parsed from the header (default ``writing``).
-  The display name is parsed from a ``display_name:`` / ``name:`` header line.
-  No central manifest is consulted: dropping a folder under ``personas/`` is
-  enough for it to appear in the list.
+- ``personas/<kind>/<name>.txt`` -- selectable LLM identity / system
+  prompt. ``kind`` is the parent folder (``prompt`` / ``writing``); the file
+  stem is both the persona id and the display name shown in the dropdown.
+  Dropping a ``.txt`` under the matching type folder is enough for it to
+  appear in the list; no central manifest or per-file header metadata.
 - ``genres/*.txt`` -- writing genre settings (writing class, third slot).
 - ``styles/*.txt`` -- writing style templates (writing class, fourth slot).
 
@@ -39,10 +36,10 @@ STYLES_DIR = "styles"
 NONE_VALUE = "none"
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-_META_LINE_RE = re.compile(r"^\s*(display_name|name|kind)\s*[:：]\s*(.+?)\s*$")
 _KIND_VALUES = {"prompt", "writing"}
-# Top-level folders that group personas by kind in the nested layout.
-_TYPE_DIRS = {"prompt", "writing"}
+_TYPE_DIRS = _KIND_VALUES
+# Characters forbidden in a persona file stem (path / shell unsafe).
+_PERSONA_INVALID_CHARS = '/\\:*?"<>|'
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"key": None, "personas": [], "genres": [], "styles": []}
 
@@ -195,59 +192,10 @@ def _extract_label(text: str, fallback: str) -> str:
     return fallback
 
 
-def _parse_persona_meta(text: str, fallback_id: str) -> tuple[str, str, bool]:
-    """Pull ``kind`` and display name out of header ``key: value`` lines.
-
-    Returns ``(kind, display, kind_explicit)``; ``kind_explicit`` is True only
-    when the header carried a valid ``kind`` value, so the caller can tell a
-    deliberate override apart from the default / folder-derived kind.
-    """
-    kind = "writing"
-    kind_explicit = False
-    display = ""
-    for line in text.splitlines():
-        match = _META_LINE_RE.match(line)
-        if not match:
-            continue
-        key, value = match.group(1).lower(), match.group(2).strip()
-        if key == "kind" and value.lower() in _KIND_VALUES:
-            kind = value.lower()
-            kind_explicit = True
-        elif key in ("display_name", "name") and value:
-            display = value[:40]
-    if not display:
-        display = _extract_label(text, fallback_id)
-    return kind, display, kind_explicit
-
-
-def _build_persona(persona_dir: Path, base_kind: str | None) -> dict[str, Any] | None:
-    pid = persona_dir.name
-    if pid.startswith("_") or pid.startswith(".") or not _ID_RE.match(pid):
-        return None
-    system_file = persona_dir / "system.txt"
-    text = ""
-    if system_file.is_file():
-        try:
-            text = _read_text(system_file)
-        except (OSError, UnicodeDecodeError):
-            text = ""
-    header_kind, display_name, kind_explicit = _parse_persona_meta(text, pid)
-    # Header kind wins as an explicit override; otherwise the parent type
-    # folder; flat layouts fall back to the default writing kind.
-    kind = header_kind if kind_explicit else (base_kind or "writing")
-    if base_kind:
-        rel = f"{PERSONAS_DIR}/{base_kind}/{pid}/system.txt"
-    else:
-        rel = f"{PERSONAS_DIR}/{pid}/system.txt"
-    return {
-        "id": pid,
-        "display_name": display_name,
-        "kind": kind,
-        "system_file": rel,
-        "description": "",
-        "enabled": True,
-        "exists": bool(text.strip()),
-    }
+def _valid_persona_stem(stem: str) -> bool:
+    if not stem or stem.startswith("_") or stem.startswith("."):
+        return False
+    return not any(ch in stem for ch in _PERSONA_INVALID_CHARS)
 
 
 def _scan_personas() -> list[dict[str, Any]]:
@@ -255,22 +203,32 @@ def _scan_personas() -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     if not folder.is_dir():
         return entries
-    for top in sorted(folder.iterdir()):
-        if not top.is_dir():
+    for kind_dir in sorted(folder.iterdir()):
+        if not kind_dir.is_dir() or kind_dir.name not in _TYPE_DIRS:
             continue
-        if top.name in _TYPE_DIRS:
-            # Nested layout: personas/<kind>/<id>/system.txt
-            for sub in sorted(top.iterdir()):
-                if not sub.is_dir():
-                    continue
-                entry = _build_persona(sub, top.name)
-                if entry:
-                    entries.append(entry)
-        else:
-            # Legacy flat layout: personas/<id>/system.txt
-            entry = _build_persona(top, None)
-            if entry:
-                entries.append(entry)
+        kind = kind_dir.name
+        for path in sorted(kind_dir.iterdir()):
+            if not path.is_file() or path.suffix != ".txt":
+                continue
+            stem = path.stem
+            if not _valid_persona_stem(stem):
+                continue
+            text = ""
+            try:
+                text = _read_text(path)
+            except (OSError, UnicodeDecodeError):
+                text = ""
+            entries.append(
+                {
+                    "id": stem,
+                    "display_name": stem,
+                    "kind": kind,
+                    "system_file": f"{PERSONAS_DIR}/{kind}/{stem}.txt",
+                    "description": "",
+                    "enabled": True,
+                    "exists": bool(text.strip()),
+                }
+            )
     return entries
 
 
@@ -278,7 +236,6 @@ def _ensure_cache(force: bool = False) -> None:
     key = _cache_key()
     with _lock:
         if not force and _cache["key"] == key and _cache["personas"]:
-            return
             return
         _cache["key"] = key
         _cache["personas"] = _scan_personas()

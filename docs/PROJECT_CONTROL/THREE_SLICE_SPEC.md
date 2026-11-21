@@ -48,7 +48,7 @@
 
 - LLM 必选；身份、领域设定、风格、模式各槽位可选。
 - 画布节点：身份默认 `none`（裸模型），规则套默认 `auto`。
-- 工作台：首次进入且无本地记忆时，提示词工作区预选内置提示词助手（`prompt_assistant`）以保留原提示词打磨体验；提示词工作区只列提示词类身份与裸模型（`none`），写作类身份在独立「写作助手」页签；选择随浏览器记忆保留。
+- 工作台：首次进入且无本地记忆时，提示词工作区预选内置提示词助手（`提示词助手`）以保留原提示词打磨体验；提示词工作区只列提示词类身份与裸模型（`none`），写作类身份在独立「写作助手」页签；选择随浏览器记忆保留，记忆失效（改名 / 删除 / 跨类串入）时回退默认身份或裸模型。
 
 ### 4.2 选择工作流时的自动预选
 
@@ -77,7 +77,7 @@
 |---|---|
 | `model` | 必选，本地 Ollama 模型 |
 | `workflow_id` | 改为可选；空 = 不挂工作流、不读工作流上下文 |
-| `persona`（新增） | 可选自由文本，`none` = 裸模型；填 `personas/` 目录下身份文件夹 id。画布侧不用 combo：动态选项来自后端服务，Python 节点的静态占位列表无法通过 ComfyUI 枚举校验 |
+| `persona`（新增） | 可选自由文本，`none` = 裸模型；填 `personas/` 类型目录下身份 txt 文件名（即下拉选项名）。画布侧不用 combo：动态选项来自后端服务，Python 节点的静态占位列表无法通过 ComfyUI 枚举校验 |
 | 领域设定（`prompt_profile`） | 三态：空（不注入）/ auto / 指定某套；自由文本填 Profile id |
 | `genre` / `style` | 写作类题材 / 文风，自由文本填对应 id，留空不叠加 |
 | `mode` | 固定枚举下拉；增加"无"；写作类 / 空身份下负向模式不适用 |
@@ -101,9 +101,9 @@
 
 ```
 prompt_profiles/
-  personas/            # ② 身份定位（目录遍历：按类型分两层）
-    prompt/<persona_id>/system.txt    # 提示词类身份
-    writing/<persona_id>/system.txt   # 写作类身份；头部 `display_name:` / `kind:` 标注显示名与类别
+  personas/            # ② 身份定位（目录遍历：类型目录下扁平 txt）
+    prompt/<选项名>.txt    # 提示词类身份；文件名即 id 即下拉显示名
+    writing/<选项名>.txt   # 写作类身份；父目录定类型，无需头部元数据
   genres/               # 写作类·③ 题材设定（每份一个 txt）
   styles/               # 写作类·④ 文风（每份一个 txt）
   models/<id>/          # 提示词类·③ 底模专属规则套（目录遍历）
@@ -112,10 +112,10 @@ prompt_profiles/
   templates/            # 空白骨架模板，供复制新增
 ```
 
-- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<prompt|writing>/<id>/system.txt`，文件夹名即 id，父目录定类型（头部 `kind:` 可覆盖），放入目录后自动出现在对应下拉，无需登记清单。
+- 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<prompt|writing>/<选项名>.txt`，文件名（去掉 `.txt`）即 id 即下拉显示名，父目录定类型，放入目录后自动出现在对应下拉，无需登记清单、无需头部元数据。
 - 新增题材 / 文风：复制 `genres/_TEMPLATE.txt` / `styles/_TEMPLATE.txt`。
 - 新增底模规则套：复制 `templates/MODEL_RULE_TEMPLATE.txt` 到 `models/<id>/rules.txt`，文件夹名即 id；需要精确文件名模式、别名、优先级、停用或版本记录时同目录放可选 `meta.json`。详见 `prompt_profiles/PROFILES_GUIDE.md`。
-- 模板 id 仅允许小写字母 / 数字 / `-` / `_`；路径限定在 profile 根内，拒绝 `..` 越权。
+- 题材 / 文风 / 规则套 id 仅允许小写字母 / 数字 / `-` / `_`；身份文件名允许中文，仅跳过 `_` / `.` 开头与含 `/ \ : * ? " < > |` 非法字符的名字；所有路径限定在 profile 根内，拒绝 `..` 越权。
 
 ## 8. 安全边界
 

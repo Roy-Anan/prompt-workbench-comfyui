@@ -398,6 +398,14 @@ const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "negative", label: "负向词" },
 ];
 
+// 旧版英文人设 id 迁移到新的中文文件名 id；写作类身份串到本页回退提示词助手。
+const LEGACY_PERSONA_IDS: Record<string, string> = {
+  prompt_assistant: "提示词助手",
+  writing_assistant: "提示词助手",
+  polish_assistant: "提示词助手",
+};
+const DEFAULT_PERSONA = "提示词助手";
+
 const TASK_STATUS_LABEL: Record<string, string> = {
   submitted: "待运行",
   running: "运行中",
@@ -724,9 +732,7 @@ export default function WorkflowWorkbench({
   const [selectedPersona, setSelectedPersona] = useState(() => {
     const stored = readStoredParam("workbench.selectedPersona");
     // 旧记忆若指向写作类身份，回退提示词助手；本页只保留提示词类与裸模型。
-    return stored === "writing_assistant"
-      ? "prompt_assistant"
-      : stored || "prompt_assistant";
+    return (LEGACY_PERSONA_IDS[stored] ?? stored) || DEFAULT_PERSONA;
   });
   const promptPersonas = personas.filter((p) => p.kind !== "writing");
   const [genres, setGenres] = useState<LayerItem[]>([]);
@@ -841,6 +847,17 @@ export default function WorkflowWorkbench({
     void loadStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 人设列表就绪后，记忆值若已失效（改名 / 删除 / 跨类串入）回退默认提示词助手或裸模型。
+  useEffect(() => {
+    if (!selectedPersona || selectedPersona === "none") return;
+    if (!promptPersonas.some((p) => p.id === selectedPersona)) {
+      const fallback = promptPersonas.some((p) => p.id === DEFAULT_PERSONA)
+        ? DEFAULT_PERSONA
+        : "none";
+      setSelectedPersona(fallback);
+      persistParam("workbench.selectedPersona", fallback);
+    }
+  }, [promptPersonas, selectedPersona]);
   useEffect(() => {
     const openDrafts = () => setDraftPanelOpen(true);
     window.addEventListener("workbench:open-drafts", openDrafts);
