@@ -81,6 +81,10 @@ function isVisionModel(
   return tags.some((tag) => tag.includes("vl") || tag.includes("vision"));
 }
 
+function assetImageUrl(assetId: number): string {
+  return `/api/assets/image?asset_id=${assetId}`;
+}
+
 export default function VisionPanel() {
   const [modelsOnline, setModelsOnline] = useState(true);
   const [models, setModels] = useState<string[]>([]);
@@ -295,19 +299,6 @@ export default function VisionPanel() {
                   );
                 })}
               </select>
-              <select
-                value={pickedAsset}
-                disabled={busy}
-                onChange={(event) => setPickedAsset(event.target.value)}
-                title="从素材库挑选图片"
-              >
-                <option value="">从素材库选图…</option>
-                {assets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 className="secondary"
@@ -331,6 +322,55 @@ export default function VisionPanel() {
                 />
               </label>
             </div>
+            {assets.length > 0 ? (
+              <div className="vision-asset-picker">
+                <div className="vision-asset-grid">
+                  {assets.map((asset) => {
+                    const added = images.some(
+                      (image) => image.asset_id === asset.id,
+                    );
+                    const selected = pickedAsset === String(asset.id);
+                    return (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        className={[
+                          "vision-asset-card",
+                          selected ? "selected" : "",
+                          added ? "added" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        disabled={busy || added}
+                        onClick={() =>
+                          setPickedAsset(selected ? "" : String(asset.id))
+                        }
+                        title={asset.name}
+                      >
+                        <span className="vision-asset-thumb">
+                          <img
+                            src={assetImageUrl(asset.id)}
+                            alt={asset.name}
+                            loading="lazy"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        </span>
+                        <span className="vision-asset-name">{asset.name}</span>
+                        {added && (
+                          <span className="vision-asset-badge">已添加</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="muted">
+                素材库暂无可用图片，可点「本地上传」临时选图。
+              </p>
+            )}
             <textarea
               className="candidate-input"
               rows={3}
