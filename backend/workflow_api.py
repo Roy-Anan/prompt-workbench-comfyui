@@ -736,6 +736,29 @@ def reset_workflow_copy(workflow_id: str):
         _raise_api_error(exc)
 
 
+@router.post("/{workflow_id}/save-source")
+def save_workflow_source(workflow_id: str, payload: PromptWrite):
+    """Overwrite the matching ComfyUI-side workflow JSON with the working copy.
+
+    When prompt texts are supplied they are first written through the guarded
+    whitelist path; the resulting working copy is then atomically saved over
+    the same-named file in the configured ComfyUI workflows directory. A
+    one-shot ``.bak`` copy of the previous file is kept beside it.
+    """
+    try:
+        settings = datadir.load_settings_file(datadir.default_data_root()) or {}
+        source_dir = str((settings.get("storage") or {}).get("comfy_workflows", "")).strip()
+        if not source_dir:
+            raise WorkflowError("未配置 ComfyUI 工作流目录（设置 → 存储位置）")
+        if payload.positive_text is not None or payload.negative_text is not None:
+            store().write_prompts(
+                workflow_id, payload.positive_text, payload.negative_text
+            )
+        return store().save_to_source(workflow_id, Path(source_dir))
+    except (WorkflowError, FileNotFoundError, OSError) as exc:
+        _raise_api_error(exc)
+
+
 @router.get("/{workflow_id}/rules")
 def workflow_rule_context(workflow_id: str):
     """Return only the rules relevant to this workflow's checkpoint context.

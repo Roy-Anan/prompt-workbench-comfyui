@@ -869,3 +869,56 @@ def test_draft_env_snapshot_frozen_on_save_and_kept_on_update(tmp_path):
     )
     assert updated["env_snapshot"]["checkpoints"] == snapshot["checkpoints"]
     assert updated["env_snapshot"]["samplers"] == snapshot["samplers"]
+
+
+def test_save_to_source_overwrites_matching_file_with_bak(tmp_path):
+    store = WorkflowStore(tmp_path / "workflows")
+    imported = store.import_workflow("sample_api.json", sample_api_workflow())
+    workflow_id = imported["id"]
+    store.confirm_prompt_nodes(
+        workflow_id, positive_node_ids=["1"], negative_node_ids=["2"]
+    )
+    store.write_prompts(workflow_id, "new positive", "new negative")
+
+    source_dir = tmp_path / "comfy_workflows"
+    source_dir.mkdir()
+    source_file = source_dir / "sample_api.json"
+    source_file.write_text('{"stale": true}', encoding="utf-8")
+
+    result = store.save_to_source(workflow_id, source_dir)
+    assert result["filename"] == "sample_api.json"
+
+    saved = json.loads(source_file.read_text(encoding="utf-8"))
+    assert saved["1"]["inputs"]["text"] == "new positive"
+    assert saved["2"]["inputs"]["text"] == "new negative"
+
+    backup = source_dir / "sample_api.json.bak"
+    assert backup.is_file()
+    assert json.loads(backup.read_text(encoding="utf-8")) == {"stale": True}
+
+
+def test_save_to_source_rejects_missing_source_dir(tmp_path):
+    store = WorkflowStore(tmp_path / "workflows")
+    imported = store.import_workflow("sample_api.json", sample_api_workflow())
+    with pytest.raises(WorkflowError, match="目录不存在或未配置"):
+        store.save_to_source(imported["id"], tmp_path / "no_such_dir")
+
+
+def test_save_to_source_rejects_missing_target_file(tmp_path):
+    store = WorkflowStore(tmp_path / "workflows")
+    imported = store.import_workflow("sample_api.json", sample_api_workflow())
+    source_dir = tmp_path / "comfy_workflows"
+    source_dir.mkdir()
+    with pytest.raises(FileNotFoundError, match="源文件不存在"):
+        store.save_to_source(imported["id"], source_dir)
+
+
+def test_save_to_source_rejects_ui_format(tmp_path):
+    store = WorkflowStore(tmp_path / "workflows")
+    ui_workflow = {"nodes": [], "links": [], "groups": [], "config": {}, "extra": {}}
+    imported = store.import_workflow("ui.json", ui_workflow)
+    source_dir = tmp_path / "comfy_workflows"
+    source_dir.mkdir()
+    (source_dir / "ui.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(WorkflowError, match="API 格式"):
+        store.save_to_source(imported["id"], source_dir)

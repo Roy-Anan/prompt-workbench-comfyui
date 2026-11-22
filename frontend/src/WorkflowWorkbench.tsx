@@ -1378,6 +1378,29 @@ export default function WorkflowWorkbench({
     }
   }
 
+  async function saveSource() {
+    if (!workflowId || !detail?.manifest.confirmed) return;
+    if (
+      !window.confirm(
+        "将覆盖 ComfyUI 工作流目录下与本工作流同名的源 JSON 文件（旧版另存 .bak），是否继续？",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await apiPost<{ filename: string; path: string }>(
+        `/api/workflows/${workflowId}/save-source`,
+        { positive_text: positiveText, negative_text: negativeText },
+      );
+      setMessage(`已覆盖保存到源文件：${result.filename}`);
+    } catch (error) {
+      setMessage(`覆盖保存失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadVersions(id: string) {
     try {
       const result = await apiGet<{ items: VersionEntry[] }>(
@@ -3105,7 +3128,7 @@ export default function WorkflowWorkbench({
                   </p>
                   <div className="actions">
                     <button
-                      onClick={() => void writePrompts()}
+                      onClick={() => void saveSource()}
                       disabled={busy || !detail.manifest.confirmed}
                     >
                       覆盖保存

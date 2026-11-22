@@ -403,11 +403,12 @@ const storageLabels: Record<string, string> = {
   lora: "LoRA 模型目录（只读扫描）",
   clip: "CLIP 模型目录（只读扫描）",
   vae: "VAE 模型目录（只读扫描）",
+  comfy_workflows: "ComfyUI 工作流目录（覆盖保存目标）",
 };
 
 // Optional external ComfyUI model directories: read-only scanned, never
 // created by the workbench and never copied into the data root.
-const EXTERNAL_STORAGE_KEYS = ["checkpoint", "lora", "clip", "vae"];
+const EXTERNAL_STORAGE_KEYS = ["checkpoint", "lora", "clip", "vae", "comfy_workflows"];
 
 function isExternalStorageKey(key: string): boolean {
   return EXTERNAL_STORAGE_KEYS.includes(key);

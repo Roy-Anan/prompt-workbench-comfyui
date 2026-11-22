@@ -963,6 +963,39 @@ class WorkflowStore:
             raise FileNotFoundError("工作流不存在")
         return _read_json(folder / "working.json")
 
+    def save_to_source(self, workflow_id: str, source_dir: Path) -> dict[str, Any]:
+        """Overwrite the matching ComfyUI-side workflow JSON with the working copy.
+
+        The target must already exist under the configured ComfyUI workflows
+        directory; a one-shot ``.bak`` copy of the previous file is kept beside
+        it. UI-format workflows are refused because the working copy is an API
+        dict and cannot round-trip into the canvas graph format.
+        """
+        folder = self._folder(workflow_id)
+        if not folder.is_dir():
+            raise FileNotFoundError("工作流不存在")
+        manifest = _read_json(folder / "manifest.json")
+        if manifest.get("format") != "api":
+            raise WorkflowError("仅 API 格式工作流可覆盖保存到源文件")
+        working = _read_json(folder / "working.json")
+
+        source_root = Path(source_dir).expanduser().resolve()
+        if not source_root.is_dir():
+            raise WorkflowError("ComfyUI 工作流目录不存在或未配置")
+        filename = _safe_filename(str(manifest.get("filename") or "")) or f"{workflow_id}.json"
+        target = (source_root / filename).resolve()
+        try:
+            target.relative_to(source_root)
+        except ValueError as exc:
+            raise WorkflowError("源文件路径越界") from exc
+        if not target.is_file():
+            raise FileNotFoundError(f"源文件不存在：{filename}")
+
+        backup = target.with_name(target.name + ".bak")
+        shutil.copy2(target, backup)
+        _atomic_json(target, working)
+        return {"filename": filename, "path": str(target)}
+
     def reset_working_prompts(self, workflow_id: str) -> dict[str, Any]:
         """Restore the working copy to the imported original.
 
