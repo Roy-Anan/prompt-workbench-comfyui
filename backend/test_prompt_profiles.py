@@ -402,6 +402,24 @@ def test_persona_scan_skips_hidden_and_empty_files(tmp_path, monkeypatch):
     assert entries["空文件"]["exists"] is False
 
 
+def test_genres_styles_use_filename_as_id_and_label(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    _write_layer(root, "genres", "武侠", "江湖恩怨")
+    _write_layer(root, "styles", "网文快节奏", "短促有力")
+    (root / "genres" / "_hidden.txt").write_text("隐藏", encoding="utf-8")
+    (root / "styles" / "空文风.txt").write_text("   ", encoding="utf-8")
+
+    genres = {e["id"]: e for e in prompt_personas.list_genres(force=True)}
+    styles = {e["id"]: e for e in prompt_personas.list_styles(force=True)}
+    assert set(genres) == {"武侠"}
+    assert set(styles) == {"网文快节奏", "空文风"}
+    assert genres["武侠"]["display_name"] == "武侠"
+    assert styles["网文快节奏"]["display_name"] == "网文快节奏"
+    assert styles["空文风"]["exists"] is False
+    assert prompt_personas.get_genre("武侠") == "江湖恩怨"
+    assert prompt_personas.get_style("网文快节奏") == "短促有力"
+
+
 def _candidate_fake(monkeypatch, captured):
     def fake_chat(url, model, messages, timeout=30.0, options=None):
         captured["messages"] = messages
@@ -440,8 +458,8 @@ def test_writing_persona_skips_profile_and_adds_genre_style(client, tmp_path, mo
     root = _make_root(tmp_path, monkeypatch)
     _write_profile(root, "alpha", FULL_RULES, patterns=["alpha.safetensors"])
     _write_persona(root, "writing_assistant", "writing", "写作助手身份正文")
-    _write_layer(root, "genres", "yanqing", "言情题材要素")
-    _write_layer(root, "styles", "gufeng", "古风文风约定")
+    _write_layer(root, "genres", "言情", "言情题材要素")
+    _write_layer(root, "styles", "古风白描", "古风文风约定")
 
     db = main.DATA_ROOT / "database" / "workbench.sqlite3"
     _seed_context_rules(db)
@@ -462,8 +480,8 @@ def test_writing_persona_skips_profile_and_adds_genre_style(client, tmp_path, mo
         json={
             "model": "test-model",
             "persona": "writing_assistant",
-            "genre": "yanqing",
-            "style": "gufeng",
+            "genre": "言情",
+            "style": "古风白描",
         },
     )
     assert response.status_code == 200

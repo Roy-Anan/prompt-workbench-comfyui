@@ -104,8 +104,8 @@ prompt_profiles/
   personas/            # ② 身份定位（目录遍历：类型目录下扁平 txt）
     prompt/<选项名>.txt    # 提示词类身份；文件名即 id 即下拉显示名
     writing/<选项名>.txt   # 写作类身份；父目录定类型，无需头部元数据
-  genres/               # 写作类·③ 题材设定（每份一个 txt）
-  styles/               # 写作类·④ 文风（每份一个 txt）
+  genres/               # 写作类·③ 题材设定（扁平 txt；文件名即 id 即下拉显示名）
+  styles/               # 写作类·④ 文风（扁平 txt；文件名即 id 即下拉显示名）
   models/<id>/          # 提示词类·③ 底模专属规则套（目录遍历）
     rules.txt           # 必选规则正文；头部可解析显示名/架构/文件名
     meta.json           # 可选结构化补充（模式/别名/优先级/停用/版本……）
@@ -113,10 +113,10 @@ prompt_profiles/
 ```
 
 - 新增身份：复制 `templates/PERSONA_TEMPLATE.txt` 到 `personas/<prompt|writing>/<选项名>.txt`，文件名（去掉 `.txt`）即 id 即下拉显示名，父目录定类型，放入目录后自动出现在对应下拉，无需登记清单、无需头部元数据。
-- 新增题材 / 文风：复制 `genres/_TEMPLATE.txt` / `styles/_TEMPLATE.txt`。
+- 新增题材 / 文风：复制 `genres/_TEMPLATE.txt` / `styles/_TEMPLATE.txt` 为 `<选项名>.txt`，文件名（去掉 `.txt`）即 id 即下拉显示名，允许中文，无需头部名称行与清单登记。
 - 新增底模规则套：复制 `templates/MODEL_RULE_TEMPLATE.txt` 到 `models/<id>/rules.txt`，文件夹名即 id；需要精确文件名模式、别名、优先级、停用或版本记录时同目录放可选 `meta.json`。详见 `prompt_profiles/PROFILES_GUIDE.md`。
 - 新增创作模式：模式是前后端 + 扩展节点的固定枚举（**不是**往目录丢 txt），需同步改后端词表、两个前端下拉与扩展节点；改动位置、可照抄片段与自测口径见 `templates/CANDIDATE_MODE_TEMPLATE.md`。
-- 题材 / 文风 / 规则套 id 仅允许小写字母 / 数字 / `-` / `_`；身份文件名允许中文，仅跳过 `_` / `.` 开头与含 `/ \ : * ? " < > |` 非法字符的名字；所有路径限定在 profile 根内，拒绝 `..` 越权。
+- 身份 / 题材 / 文风文件名均允许中文，仅跳过 `_` / `.` 开头与含 `/ \ : * ? " < > |` 非法字符的名字；规则套文件夹名沿用小写 slug；所有路径限定在 profile 根内，拒绝 `..` 越权。
 
 ## 8. 安全边界
 

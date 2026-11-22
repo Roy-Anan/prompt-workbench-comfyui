@@ -8,8 +8,10 @@ identity and writing-layer templates under the profile root:
   stem is both the persona id and the display name shown in the dropdown.
   Dropping a ``.txt`` under the matching type folder is enough for it to
   appear in the list; no central manifest or per-file header metadata.
-- ``genres/*.txt`` -- writing genre settings (writing class, third slot).
-- ``styles/*.txt`` -- writing style templates (writing class, fourth slot).
+- ``genres/<题材名>.txt`` -- writing genre settings (writing class, third slot).
+- ``styles/<文风名>.txt`` -- writing style templates (writing class, fourth slot).
+  For both layers the file stem is both the id and the dropdown display name;
+  Chinese stems are allowed, and no per-file header metadata is parsed.
 
 Scope and boundaries mirror :mod:`prompt_profiles`:
 
@@ -22,7 +24,6 @@ Scope and boundaries mirror :mod:`prompt_profiles`:
 
 from __future__ import annotations
 
-import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -35,10 +36,9 @@ STYLES_DIR = "styles"
 # Sentinel / explicit empty value: selecting "none" means no identity layer.
 NONE_VALUE = "none"
 
-_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _KIND_VALUES = {"prompt", "writing"}
 _TYPE_DIRS = _KIND_VALUES
-# Characters forbidden in a persona file stem (path / shell unsafe).
+# Characters forbidden in a layer file stem (path / shell unsafe).
 _PERSONA_INVALID_CHARS = '/\\:*?"<>|'
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"key": None, "personas": [], "genres": [], "styles": []}
@@ -69,27 +69,22 @@ def _is_none(value: str | None) -> bool:
     return (value or "").strip().lower() in ("", NONE_VALUE)
 
 
-def _cache_key() -> tuple[Any, Any]:
-    root = root_dir()
-    personas_dir = root / PERSONAS_DIR
-    persona_key: Any
-    if personas_dir.is_dir():
-        persona_key = tuple(
-            (str(path.relative_to(personas_dir)), path.stat().st_mtime_ns, path.stat().st_size)
-            for path in sorted(personas_dir.rglob("*"))
+def _dir_key(folder: Path) -> Any:
+    if folder.is_dir():
+        return tuple(
+            (str(path.relative_to(folder)), path.stat().st_mtime_ns, path.stat().st_size)
+            for path in sorted(folder.rglob("*"))
             if path.is_file()
         )
-    else:
-        persona_key = None
-    parts: list[Any] = []
-    for sub in (GENRES_DIR, STYLES_DIR):
-        folder = root / sub
-        parts.append(
-            (folder.stat().st_mtime_ns, folder.stat().st_size)
-            if folder.is_dir()
-            else None
-        )
-    return persona_key, tuple(parts)
+    return None
+
+
+def _cache_key() -> tuple[Any, Any]:
+    root = root_dir()
+    return _dir_key(root / PERSONAS_DIR), (
+        _dir_key(root / GENRES_DIR),
+        _dir_key(root / STYLES_DIR),
+    )
 
 
 def list_personas(force: bool = False) -> list[dict[str, Any]]:
@@ -116,13 +111,13 @@ def get_persona(persona_id: str) -> dict[str, Any] | None:
     return None
 
 
-def list_genres() -> list[dict[str, Any]]:
-    _ensure_cache()
+def list_genres(force: bool = False) -> list[dict[str, Any]]:
+    _ensure_cache(force)
     return list(_cache["genres"])
 
 
-def list_styles() -> list[dict[str, Any]]:
-    _ensure_cache()
+def list_styles(force: bool = False) -> list[dict[str, Any]]:
+    _ensure_cache(force)
     return list(_cache["styles"])
 
 
@@ -138,7 +133,7 @@ def get_style(style_id: str) -> str:
 
 def _read_layer_text(directory: str, layer_id: str) -> str:
     layer_id = (layer_id or "").strip()
-    if not layer_id or not _ID_RE.match(layer_id):
+    if not layer_id or not _valid_persona_stem(layer_id):
         return ""
     resolved = _safe_resolve(Path(directory) / f"{layer_id}.txt")
     if resolved and resolved.is_file():
@@ -158,38 +153,21 @@ def _scan_text_layer(directory: str) -> list[dict[str, Any]]:
         if not path.is_file() or path.suffix != ".txt":
             continue
         stem = path.stem
-        if stem.startswith("_") or stem.startswith("."):
+        if not _valid_persona_stem(stem):
             continue
-        if not _ID_RE.match(stem):
-            continue
-        label = stem
+        text = ""
         try:
             text = _read_text(path)
-            label = _extract_label(text, stem)
         except (OSError, UnicodeDecodeError):
             text = ""
         entries.append(
             {
                 "id": stem,
-                "display_name": label,
+                "display_name": stem,
                 "exists": bool(text.strip()),
             }
         )
     return entries
-
-
-def _extract_label(text: str, fallback: str) -> str:
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("["):
-            continue
-        if line.startswith("##"):
-            line = line.lstrip("#").strip()
-        if "：" in line:
-            line = line.split("：", 1)[1].strip()
-        if line:
-            return line[:40]
-    return fallback
 
 
 def _valid_persona_stem(stem: str) -> bool:
