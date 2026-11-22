@@ -417,6 +417,42 @@ def test_diagnostics_report_is_read_only_and_conservative(client):
     assert "external_directories" in body
 
 
+def test_runtime_logs_endpoint_reads_local_tail(client):
+    test_client, main_module = client
+
+    response = test_client.get("/api/logs", headers=auth())
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["path"].endswith("workbench.log")
+    assert isinstance(body["lines"], list)
+    assert body["count"] == len(body["lines"])
+    # Lifespan startup lines were written through the rotating file handler.
+    assert any("工作台后端启动" in line for line in body["lines"])
+
+
+def test_runtime_logs_endpoint_requires_session(client):
+    test_client, _ = client
+    assert test_client.get("/api/logs").status_code == 401
+
+
+def test_runtime_log_read_tail_bounds_lines(tmp_path):
+    import runtime_log
+
+    runtime_log.setup_logging(tmp_path)
+    log = runtime_log.logger()
+    for index in range(5):
+        log.info("tail-line-%d", index)
+
+    tail = runtime_log.read_tail(tmp_path, 2)
+    assert len(tail) == 2
+    assert "tail-line-3" in tail[0]
+    assert "tail-line-4" in tail[1]
+
+    missing = runtime_log.read_tail(tmp_path / "nope", 10)
+    assert missing == []
+
+
 def test_diagnostics_counts_drafts_including_trashed(client):
     test_client, _ = client
     workflow = {

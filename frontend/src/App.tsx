@@ -517,6 +517,10 @@ export default function App() {
   const [hashingIdentity, setHashingIdentity] = useState<string | null>(null);
   const [openRuleHistory, setOpenRuleHistory] = useState<string | null>(null);
   const [ruleHistory, setRuleHistory] = useState<RuleHistoryItem[]>([]);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logPath, setLogPath] = useState("");
+  const [logLoaded, setLogLoaded] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
   const [restoringHistory, setRestoringHistory] = useState<number | null>(null);
   const [importReports, setImportReports] = useState<
     Record<string, ProfileImportReport>
@@ -1435,6 +1439,44 @@ export default function App() {
     }
   }
 
+  async function loadRuntimeLogs() {
+    setLogLoading(true);
+    try {
+      const result = await apiGet<{
+        path: string;
+        lines: string[];
+        count: number;
+      }>("/api/logs?lines=300");
+      setLogPath(result.path);
+      setLogLines(result.lines);
+      setLogLoaded(true);
+    } catch (error) {
+      setMessage(`读取运行日志失败：${String(error)}`);
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  function exportRuntimeLog() {
+    if (!logLines.length) {
+      setMessage("当前没有可导出的日志。");
+      return;
+    }
+    const blob = new Blob([logLines.join("\n") + "\n"], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `workbench-log-${stamp}.log`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setMessage("运行日志已导出（仅本地，未上传）。");
+  }
+
   function pickBackupFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -2035,6 +2077,47 @@ export default function App() {
           </div>
         ) : (
           <p>正在读取存储配置…</p>
+        )}
+      </section>
+
+      <section className="panel" id="settings-logs">
+        <div className="section-heading">
+          <div>
+            <h2>运行日志</h2>
+            <p>
+              后端启动、关键错误与 5xx 请求会写入本地日志文件；
+              日志不进入整库备份，也不含模型权重、原图或完整 Prompt。
+            </p>
+          </div>
+        </div>
+
+        <div className="actions">
+          <button
+            onClick={() => void loadRuntimeLogs()}
+            disabled={logLoading}
+          >
+            {logLoading ? "读取中…" : "刷新日志"}
+          </button>
+
+          <button
+            className="secondary"
+            onClick={exportRuntimeLog}
+            disabled={logLoading || !logLines.length}
+          >
+            导出日志
+          </button>
+        </div>
+
+        {logPath && <p className="dir-path">{logPath}</p>}
+
+        {logLoaded ? (
+          logLines.length > 0 ? (
+            <pre className="log-viewer">{logLines.join("\n")}</pre>
+          ) : (
+            <p className="muted">暂无日志记录。</p>
+          )
+        ) : (
+          <p className="muted">点击「刷新日志」读取末尾记录。</p>
         )}
       </section>
 

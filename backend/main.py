@@ -39,6 +39,7 @@ import prompt_personas
 import queue_dispatcher
 import rule_engine
 import rule_store
+import runtime_log
 import sidebar_summary as sidebar_summary_module
 import task_queue
 import vision_api
@@ -405,10 +406,13 @@ class QueueGlobalPause(BaseModel):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _ensure_node_token()
+    runtime_log.setup_logging(DATA_ROOT)
+    runtime_log.logger().info("工作台后端启动（%s）", APP_VERSION)
     queue_dispatcher.start()
     try:
         yield
     finally:
+        runtime_log.logger().info("工作台后端停止")
         queue_dispatcher.stop()
 
 
@@ -535,7 +539,15 @@ async def require_session(request: Request, call_next):
                 content={"detail": "CSRF token mismatch"},
             )
 
-    return await call_next(request)
+    response = await call_next(request)
+    if response.status_code >= 500:
+        runtime_log.logger().error(
+            "请求失败 %s %s -> HTTP %s",
+            request.method,
+            request.url.path,
+            response.status_code,
+        )
+    return response
 
 
 @app.get("/api/bootstrap")
@@ -1129,6 +1141,24 @@ def diagnostics():
         },
         "database_error": db_error,
         "uploaded": False,
+    }
+
+
+@app.get("/api/logs")
+def runtime_logs(lines: int = 200):
+    """Read-only tail of the on-disk runtime log.
+
+    Returns the last bounded number of plain text lines and the local file
+    path. The log stays local and is excluded from backup archives; it carries
+    no model weights, images or full prompt payloads.
+    """
+    load_settings()
+    count = max(1, min(int(lines), 1000))
+    entries = runtime_log.read_tail(DATA_ROOT, count)
+    return {
+        "path": str(runtime_log.log_file(DATA_ROOT)),
+        "lines": entries,
+        "count": len(entries),
     }
 
 

@@ -1925,6 +1925,21 @@ button.danger {
   }
 }
 
+.log-viewer {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-family: monospace;
+  font-size: 0.767rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 @media (max-width: 620px) {
   .asset-grid {
     grid-template-columns: minmax(0, 1fr);
