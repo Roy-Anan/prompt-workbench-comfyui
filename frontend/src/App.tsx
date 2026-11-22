@@ -891,102 +891,128 @@ export default function App() {
       ? meta.source ?? (meta.manual_present ? "manual" : "sidecar")
       : null;
     const combos = meta?.combos ?? [];
+    const samples = meta?.samples ?? [];
+    const cover = samples[0] ?? null;
+    const restSamples = samples.slice(1);
+    const cardClass = meta
+      ? `lora-card lora-meta-${meta.status}${meta.hidden ? " is-hidden" : ""}`
+      : "lora-card";
     return (
-      <li
-        key={entry.name}
-        className={meta ? `lora-meta lora-meta-${meta.status}` : "lora-meta"}
-      >
-        <span>
-          {entry.name}
-          {meta && (
-            <small className="lora-meta-status">
-              {LORA_META_LABEL[meta.status]}
-            </small>
+      <div key={entry.name} className={cardClass}>
+        <div className="lora-card-thumb">
+          {cover ? (
+            <img
+              src={`/api/assets/image?asset_id=${cover.asset_id}`}
+              alt="效果图"
+              loading="lazy"
+            />
+          ) : (
+            <div className="lora-card-thumb-missing">
+              {entry.name.trim().slice(0, 1).toUpperCase() || "L"}
+            </div>
           )}
-          {source && (
-            <small className="lora-meta-source">
-              {LORA_SOURCE_LABEL[source]}
-            </small>
+        </div>
+        <div className="lora-card-meta">
+          <div className="lora-card-head">
+            <span className="lora-card-name" title={entry.name}>
+              {entry.name}
+            </span>
+            {meta && (
+              <small className="lora-meta-status">
+                {LORA_META_LABEL[meta.status]}
+              </small>
+            )}
+            {source && (
+              <small className="lora-meta-source">
+                {LORA_SOURCE_LABEL[source]}
+              </small>
+            )}
+            {meta?.hidden && (
+              <small className="lora-meta-source">已隐藏</small>
+            )}
+          </div>
+          <small className="lora-card-identity">{identityLabel(entry)}</small>
+          {detail && <small className="lora-meta-detail">{detail}</small>}
+          {meta && meta.trigger_words.length > 0 && (
+            <div className="lora-triggers">
+              {meta.trigger_words.map((word) => (
+                <span key={word} className="lora-trigger-chip">
+                  {word}
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => void copyLoraTriggers(meta)}
+              >
+                复制触发词
+              </button>
+            </div>
           )}
-          {meta?.hidden && (
-            <small className="lora-meta-source">已隐藏</small>
+          {meta && (meta.tags ?? []).length > 0 && (
+            <div className="lora-tags">
+              {(meta.tags ?? []).map((tag) => (
+                <span key={tag} className="lora-tag-chip">
+                  {tag}
+                </span>
+              ))}
+            </div>
           )}
-        </span>
-        <small>{identityLabel(entry)}</small>
-        <HashButton
-          category="lora"
-          entry={entry}
-          busyKey={hashingIdentity}
-          onHash={(cat, item) => void hashModelIdentity(cat, item)}
-        />
-        {detail && <small className="lora-meta-detail">{detail}</small>}
-        {meta && meta.trigger_words.length > 0 && (
-          <div className="lora-triggers">
-            {meta.trigger_words.map((word) => (
-              <span key={word} className="lora-trigger-chip">
-                {word}
-              </span>
-            ))}
-            <button
-              type="button"
-              onClick={() => void copyLoraTriggers(meta)}
-            >
-              复制触发词
-            </button>
+        {(restSamples.length > 0 || combos.length > 0 || (entry.related ?? []).length > 0 || (entry.related_triggers ?? []).length > 0 || (entry.compatible ?? []).length > 0) && (
+          <div className="lora-card-extra">
+            {restSamples.length > 0 && (
+              <div className="lora-samples">
+                {restSamples.map((sample) => (
+                  <figure key={sample.asset_id} className="lora-sample">
+                    <img
+                      src={`/api/assets/image?asset_id=${sample.asset_id}`}
+                      alt="效果图"
+                      loading="lazy"
+                    />
+                    {sample.caption && (
+                      <figcaption>{sample.caption}</figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            )}
+            {combos.length > 0 && (
+              <ul className="lora-combos">
+                {combos.map((combo, index) => (
+                  <li key={index}>
+                    {combo.name && <strong>{combo.name}：</strong>}
+                    {combo.trigger_words.join("、")}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {(entry.related ?? []).length > 0 && (
+              <small className="lora-related">
+                疑似同一身份：{(entry.related ?? []).join("、")}
+              </small>
+            )}
+            {(entry.related_triggers ?? []).length > 0 && (
+              <small className="lora-related">
+                共享触发词：{(entry.related_triggers ?? []).join("、")}
+              </small>
+            )}
+            {(entry.compatible ?? []).length > 0 && (
+              <small className="lora-related">
+                同底座可搭配：{(entry.compatible ?? []).join("、")}
+              </small>
+            )}
           </div>
-        )}
-        {meta && (meta.tags ?? []).length > 0 && (
-          <div className="lora-tags">
-            {(meta.tags ?? []).map((tag) => (
-              <span key={tag} className="lora-tag-chip">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-        {meta && (meta.samples ?? []).length > 0 && (
-          <div className="lora-samples">
-            {(meta.samples ?? []).map((sample) => (
-              <figure key={sample.asset_id} className="lora-sample">
-                <img
-                  src={`/api/assets/image?asset_id=${sample.asset_id}`}
-                  alt="效果图"
-                  loading="lazy"
-                />
-                {sample.caption && (
-                  <figcaption>{sample.caption}</figcaption>
-                )}
-              </figure>
-            ))}
-          </div>
-        )}
-        {combos.length > 0 && (
-          <ul className="lora-combos">
-            {combos.map((combo, index) => (
-              <li key={index}>
-                {combo.name && <strong>{combo.name}：</strong>}
-                {combo.trigger_words.join("、")}
-              </li>
-            ))}
-          </ul>
-        )}
-        {(entry.related ?? []).length > 0 && (
-          <small className="lora-related">
-            疑似同一身份：{(entry.related ?? []).join("、")}
-          </small>
-        )}
-        {(entry.related_triggers ?? []).length > 0 && (
-          <small className="lora-related">
-            共享触发词：{(entry.related_triggers ?? []).join("、")}
-          </small>
-        )}
-        {(entry.compatible ?? []).length > 0 && (
-          <small className="lora-related">
-            同底座可搭配：{(entry.compatible ?? []).join("、")}
-          </small>
         )}
         {editingLora === entry.name ? (
-          <div className="lora-edit">
+          <>
+            <div className="lora-card-actions">
+              <HashButton
+                category="lora"
+                entry={entry}
+                busyKey={hashingIdentity}
+                onHash={(cat, item) => void hashModelIdentity(cat, item)}
+              />
+            </div>
+            <div className="lora-edit">
             <label>
               触发词（逗号或换行分隔）
               <textarea
@@ -1113,8 +1139,15 @@ export default function App() {
               </button>
             </div>
           </div>
+          </>
         ) : (
-          <>
+          <div className="lora-card-actions">
+            <HashButton
+              category="lora"
+              entry={entry}
+              busyKey={hashingIdentity}
+              onHash={(cat, item) => void hashModelIdentity(cat, item)}
+            />
             <button
               className="secondary"
               onClick={() => startLoraEdit(entry)}
@@ -1128,9 +1161,10 @@ export default function App() {
             >
               {meta?.hidden ? "恢复显示" : "从清单隐藏"}
             </button>
-          </>
+          </div>
         )}
-      </li>
+        </div>
+      </div>
     );
   };
 
@@ -1869,16 +1903,16 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                <ul className="catalog-list lora-list">
+                <div className="lora-grid">
                   {visibleLoras.map((entry) => renderLoraEntry(entry))}
                   {visibleLoras.length === 0 && (
-                    <li className="catalog-empty">
+                    <div className="catalog-empty">
                       {catalog.loras.length === 0
                         ? "ComfyUI 未列出 LoRA"
                         : "没有匹配筛选条件的 LoRA"}
-                    </li>
+                    </div>
                   )}
-                </ul>
+                </div>
               </>
             ) : (
               <p className="catalog-offline">

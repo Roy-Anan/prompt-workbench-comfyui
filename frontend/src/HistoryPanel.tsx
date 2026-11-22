@@ -765,6 +765,124 @@ function deleteButton(record: AggregateRecord) {
   );
 }
 
+function firstPromptImage(record: HistoryRecord): HistoryImage | null {
+  const images = record.images || [];
+  return images.find((img) => img.exists !== false) ?? images[0] ?? null;
+}
+
+function firstExistingAsset(record: VisionRecord): VisionAsset | null {
+  return record.assets.find((asset) => asset.exists) ?? null;
+}
+
+// Card-top thumbnail for the history grid; mirrors the asset-library card
+// layout. Prompt records use the first output image, vision records the first
+// referenced asset; writing records have no image and show a placeholder.
+function HistoryCardThumb({
+  record,
+  onOpen,
+}: {
+  record: AggregateRecord;
+  onOpen: (() => void) | null;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  let url: string | null = null;
+  let placeholder = "暂无图片";
+
+  if (isPromptRecord(record)) {
+    const image = firstPromptImage(record);
+    if (image) {
+      url = historyImageUrl(image);
+      placeholder = image.exists === false ? "图片已丢失" : "暂无出图";
+    }
+  } else if (record.kind === "vision") {
+    const asset = firstExistingAsset(record);
+    if (asset) {
+      url = assetImageUrl(asset.asset_id);
+      placeholder = "素材已失效";
+    }
+  } else {
+    placeholder = "成文记录";
+  }
+
+  useEffect(() => {
+    if (!url) {
+      setObjectUrl(null);
+      return;
+    }
+    let alive = true;
+    cachedObjectUrl(url)
+      .then((cached) => {
+        if (alive) setObjectUrl(cached);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+
+  if (!url) {
+    return <div className="history-card-thumb-missing">{placeholder}</div>;
+  }
+
+  return (
+    <div
+      className="history-card-thumb"
+      onClick={onOpen ?? undefined}
+      title={onOpen ? "点击查看大图" : undefined}
+    >
+      <img src={objectUrl ?? url} alt="历史记录缩略图" loading="lazy" />
+    </div>
+  );
+}
+
+function promptCardOpen(
+  record: HistoryRecord,
+  openLightbox: (images: HistoryImage[], index: number) => void,
+): (() => void) | null {
+  const image = firstPromptImage(record);
+  const images = record.images || [];
+  const index = image ? images.indexOf(image) : -1;
+  if (!image || image.exists === false || index < 0) return null;
+  return () => openLightbox(images, index);
+}
+
+function renderVisionDetail(record: VisionRecord) {
+  return (
+    <div className="profile-preview" style={{ width: "100%" }}>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>引用素材</strong>
+          <div className="history-images">
+            {record.assets.map((asset) =>
+              asset.exists ? (
+                <figure key={asset.asset_id}>
+                  <img
+                    src={assetImageUrl(asset.asset_id)}
+                    alt={asset.name}
+                    loading="lazy"
+                  />
+                  <figcaption>{asset.name}</figcaption>
+                </figure>
+              ) : (
+                <figure key={asset.asset_id}>
+                  <small className="muted">{asset.name}（素材已失效）</small>
+                </figure>
+              ),
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>识别描述</strong>
+          <small>{record.description}</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function renderVisionRecord(record: VisionRecord) {
   const open = openId === record.id;
   return (
@@ -784,51 +902,84 @@ function renderVisionRecord(record: VisionRecord) {
         </button>
         {deleteButton(record)}
       </div>
-      {open && (
-        <div className="profile-preview" style={{ width: "100%" }}>
-          <div className="rule-row">
-            <div className="rule-row-main">
-              <strong>引用素材</strong>
-              <div className="history-images">
-                {record.assets.map((asset) =>
-                  asset.exists ? (
-                    <figure key={asset.asset_id}>
-                      <img
-                        src={assetImageUrl(asset.asset_id)}
-                        alt={asset.name}
-                        loading="lazy"
-                      />
-                      <figcaption>{asset.name}</figcaption>
-                    </figure>
-                  ) : (
-                    <figure key={asset.asset_id}>
-                      <small className="muted">{asset.name}（素材已失效）</small>
-                    </figure>
-                  ),
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="rule-row">
-            <div className="rule-row-main">
-              <strong>识别描述</strong>
-              <small>{record.description}</small>
-            </div>
+      {open && renderVisionDetail(record)}
+    </div>
+  );
+}
+
+function renderVisionCard(record: VisionRecord) {
+  const open = openId === record.id;
+  return (
+    <article className="history-card" key={recordKey(record)}>
+      <HistoryCardThumb record={record} onOpen={null} />
+      <div className="history-card-meta">
+        <div className="history-card-name" title={record.description}>
+          {summarize(record.description)}
+        </div>
+        <div className="history-card-sub">
+          <span className="compare-badge">图生文</span>
+          <span>{formatTime(record.created_at)}</span>
+          {record.model && <span>{record.model}</span>}
+        </div>
+        <div className="history-card-actions">
+          <button onClick={() => setOpenId(open ? null : record.id)}>
+            {open ? "收起" : "详情"}
+          </button>
+          {deleteButton(record)}
+        </div>
+      </div>
+      {open && renderVisionDetail(record)}
+    </article>
+  );
+}
+
+function writingTags(record: WritingRecord): string[] {
+  return [
+    record.persona_name,
+    record.genre,
+    record.style,
+    record.mode ? WRITING_MODE_LABEL[record.mode] ?? record.mode : null,
+  ].filter(Boolean) as string[];
+}
+
+function renderWritingDetail(record: WritingRecord) {
+  return (
+    <div className="profile-preview" style={{ width: "100%" }}>
+      {(record.persona_name || record.genre || record.style) && (
+        <div className="rule-row">
+          <div className="rule-row-main">
+            <strong>设定</strong>
+            <small>
+              {[
+                `身份：${record.persona_name || "裸模型"}`,
+                `题材：${record.genre || "—"}`,
+                `文风：${record.style || "—"}`,
+              ].join(" · ")}
+            </small>
           </div>
         </div>
       )}
+      {record.task && (
+        <div className="rule-row">
+          <div className="rule-row-main">
+            <strong>任务要求</strong>
+            <small>{record.task}</small>
+          </div>
+        </div>
+      )}
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>成文内容</strong>
+          <small>{record.output_text}</small>
+        </div>
+      </div>
     </div>
   );
 }
 
 function renderWritingRecord(record: WritingRecord) {
   const open = openId === record.id;
-  const tags = [
-    record.persona_name,
-    record.genre,
-    record.style,
-    record.mode ? WRITING_MODE_LABEL[record.mode] ?? record.mode : null,
-  ].filter(Boolean);
+  const tags = writingTags(record);
   return (
     <div className="rule-row" key={recordKey(record)}>
       <div className="rule-row-main">
@@ -847,54 +998,205 @@ function renderWritingRecord(record: WritingRecord) {
         </button>
         {deleteButton(record)}
       </div>
-      {open && (
-        <div className="profile-preview" style={{ width: "100%" }}>
-          {(record.persona_name || record.genre || record.style) && (
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>设定</strong>
-                <small>
-                  {[
-                    `身份：${record.persona_name || "裸模型"}`,
-                    `题材：${record.genre || "—"}`,
-                    `文风：${record.style || "—"}`,
-                  ].join(" · ")}
-                </small>
-              </div>
-            </div>
-          )}
-          {record.task && (
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>任务要求</strong>
-                <small>{record.task}</small>
-              </div>
-            </div>
-          )}
-          <div className="rule-row">
-            <div className="rule-row-main">
-              <strong>成文内容</strong>
-              <small>{record.output_text}</small>
-            </div>
-          </div>
-        </div>
-      )}
+      {open && renderWritingDetail(record)}
     </div>
   );
 }
 
-function renderRecord(record: AggregateRecord) {
-  if (!isPromptRecord(record)) {
-    return record.kind === "vision" ? (
-      renderVisionRecord(record)
-    ) : (
-      renderWritingRecord(record)
-    );
-  }
-  const open = openId === record.prompt_id;
+function renderWritingCard(record: WritingRecord) {
+  const open = openId === record.id;
+  const tags = writingTags(record);
+  return (
+    <article className="history-card" key={recordKey(record)}>
+      <HistoryCardThumb record={record} onOpen={null} />
+      <div className="history-card-meta">
+        <div className="history-card-name" title={record.output_text}>
+          {summarize(record.output_text)}
+        </div>
+        <div className="history-card-sub">
+          <span className="compare-badge">写作</span>
+          <span>{formatTime(record.created_at)}</span>
+          {record.model && <span>{record.model}</span>}
+        </div>
+        {tags.length > 0 && (
+          <div className="history-card-tags">
+            {tags.map((tag) => (
+              <span key={tag} className="rule-tag">{tag}</span>
+            ))}
+          </div>
+        )}
+        <div className="history-card-actions">
+          <button onClick={() => setOpenId(open ? null : record.id)}>
+            {open ? "收起" : "详情"}
+          </button>
+          {deleteButton(record)}
+        </div>
+      </div>
+      {open && renderWritingDetail(record)}
+    </article>
+  );
+}
+
+function renderPromptDetail(record: HistoryRecord) {
   const checkpoints = snapshotFiles(record.model_snapshot, "checkpoints");
   const loras = snapshotFiles(record.model_snapshot, "loras");
   const images = record.images || [];
+  return (
+    <div className="profile-preview" style={{ width: "100%" }}>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>正向 Prompt</strong>
+          <small>{record.positive_prompt || "—"}</small>
+        </div>
+      </div>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>负向 Prompt</strong>
+          <small>{record.negative_prompt || "—"}</small>
+        </div>
+      </div>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>模型快照</strong>
+          <small>
+            {[
+              `Checkpoint：${checkpoints.join("、") || "—"}`,
+              `LoRA：${loras.join("、") || "—"}`,
+              `VAE：${snapshotFiles(record.model_snapshot, "vaes").join("、") || "—"}`,
+              `CLIP：${snapshotFiles(record.model_snapshot, "clips").join("、") || "—"}`,
+            ].join(" · ")}
+          </small>
+        </div>
+      </div>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>采样参数</strong>
+          <small>
+            {[
+              `分辨率：${record.model_snapshot.resolution || "—"}`,
+              `Clip Skip：${record.model_snapshot.clip_skip ?? "—"}`,
+              `采样器：${samplerSummary(record.model_snapshot.samplers)}`,
+            ].join(" · ")}
+          </small>
+        </div>
+      </div>
+      <div className="rule-row">
+        <div className="rule-row-main">
+          <strong>归属工作流</strong>
+          <select
+            value={record.workflow_id}
+            onChange={(event) => void rebindRecord(record, event.target.value)}
+          >
+            <option value="">画布直接生成（不归属）</option>
+            {workflowBriefs.map((brief) => (
+              <option key={brief.id} value={brief.id}>
+                {brief.filename}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {record.linked_draft && (
+        <div className="rule-row">
+          <div className="rule-row-main">
+            <strong>关联草稿</strong>
+            <small>
+              <button
+                className="secondary"
+                onClick={goToWorkbench}
+                title="跳转到工作流工作区查看草稿"
+              >
+                {record.linked_draft.name}
+              </button>
+            </small>
+          </div>
+        </div>
+      )}
+      {images.length > 0 && (
+        <div className="rule-row">
+          <div className="rule-row-main">
+            <strong>输出图片</strong>
+            <div className="history-images">
+              {images.map((image, index) => {
+                const pick: ComparePick = { record, image };
+                const picked = comparePicks.some(
+                  (entry) => pickKey(entry) === pickKey(pick),
+                );
+                return image.exists === true ? (
+                  <HistoryThumb
+                    key={`${image.subfolder}/${image.filename}`}
+                    image={image}
+                    onOpen={() => openLightbox(images, index)}
+                    onCompare={() => toggleCompare(pick)}
+                    picked={picked}
+                  />
+                ) : (
+                  <figure key={`${image.subfolder}/${image.filename}`}>
+                    <small className="muted">
+                      {image.filename}（{existenceLabel(image)}）
+                    </small>
+                    <figcaption>{image.filename}</figcaption>
+                  </figure>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="rule-row">
+        <div className="rule-row-main">
+          {savedIds.includes(record.prompt_id) ? (
+            <small className="workflow-meta">已存为草稿</small>
+          ) : !recordHasPrompt(record) ? (
+            <small className="muted">无 Prompt，无法存为草稿</small>
+          ) : draftingId === record.prompt_id ? (
+            <div className="actions">
+              <input
+                type="text"
+                placeholder="草稿名称"
+                value={draftName}
+                disabled={draftBusy}
+                onChange={(event) => setDraftName(event.target.value)}
+              />
+              <button
+                onClick={() => void saveAsDraft(record)}
+                disabled={draftBusy}
+              >
+                确认保存
+              </button>
+              <button onClick={cancelDraft} disabled={draftBusy}>
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => startDraft(record)}
+              disabled={draftBusy}
+            >
+              存为草稿
+            </button>
+          )}
+          {draftMessage && draftMessage.id === record.prompt_id && (
+            <small
+              className={
+                draftMessage.kind === "ok"
+                  ? "workflow-meta"
+                  : "workflow-warning"
+              }
+            >
+              {draftMessage.text}
+            </small>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderPromptRecord(record: HistoryRecord) {
+  const open = openId === record.prompt_id;
+  const checkpoints = snapshotFiles(record.model_snapshot, "checkpoints");
+  const loras = snapshotFiles(record.model_snapshot, "loras");
   return (
     <div className="rule-row" key={record.prompt_id}>
       <div className="rule-row-main">
@@ -920,162 +1222,80 @@ function renderRecord(record: AggregateRecord) {
         </button>
         {deleteButton(record)}
       </div>
+      {open && renderPromptDetail(record)}
+    </div>
+  );
+}
 
-        {open && (
-          <div className="profile-preview" style={{ width: "100%" }}>
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>正向 Prompt</strong>
-                <small>{record.positive_prompt || "—"}</small>
-              </div>
-            </div>
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>负向 Prompt</strong>
-                <small>{record.negative_prompt || "—"}</small>
-              </div>
-            </div>
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>模型快照</strong>
-                <small>
-                  {[
-                    `Checkpoint：${checkpoints.join("、") || "—"}`,
-                    `LoRA：${loras.join("、") || "—"}`,
-                    `VAE：${snapshotFiles(record.model_snapshot, "vaes").join("、") || "—"}`,
-                    `CLIP：${snapshotFiles(record.model_snapshot, "clips").join("、") || "—"}`,
-                  ].join(" · ")}
-                </small>
-              </div>
-            </div>
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>采样参数</strong>
-                <small>
-                  {[
-                    `分辨率：${record.model_snapshot.resolution || "—"}`,
-                    `Clip Skip：${
-                      record.model_snapshot.clip_skip ?? "—"
-                    }`,
-                    `采样器：${samplerSummary(record.model_snapshot.samplers)}`,
-                  ].join(" · ")}
-                </small>
-              </div>
-            </div>
-            <div className="rule-row">
-              <div className="rule-row-main">
-                <strong>归属工作流</strong>
-                <select
-                  value={record.workflow_id}
-                  onChange={(event) => void rebindRecord(record, event.target.value)}
-                >
-                  <option value="">画布直接生成（不归属）</option>
-                  {workflowBriefs.map((brief) => (
-                    <option key={brief.id} value={brief.id}>
-                      {brief.filename}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {record.linked_draft && (
-              <div className="rule-row">
-                <div className="rule-row-main">
-                  <strong>关联草稿</strong>
-                  <small>
-                    <button
-                      className="secondary"
-                      onClick={goToWorkbench}
-                      title="跳转到工作流工作区查看草稿"
-                    >
-                      {record.linked_draft.name}
-                    </button>
-                  </small>
-                </div>
-              </div>
-            )}
-            {images.length > 0 && (
-              <div className="rule-row">
-                <div className="rule-row-main">
-                  <strong>输出图片</strong>
-                  <div className="history-images">
-                    {images.map((image, index) => {
-                      const pick: ComparePick = { record, image };
-                      const picked = comparePicks.some(
-                        (entry) => pickKey(entry) === pickKey(pick),
-                      );
-                      return image.exists === true ? (
-                        <HistoryThumb
-                          key={`${image.subfolder}/${image.filename}`}
-                          image={image}
-                          onOpen={() => openLightbox(images, index)}
-                          onCompare={() => toggleCompare(pick)}
-                          picked={picked}
-                        />
-                      ) : (
-                        <figure key={`${image.subfolder}/${image.filename}`}>
-                          <small className="muted">
-                            {image.filename}（{existenceLabel(image)}）
-                          </small>
-                          <figcaption>{image.filename}</figcaption>
-                        </figure>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="rule-row">
-              <div className="rule-row-main">
-                {savedIds.includes(record.prompt_id) ? (
-                  <small className="workflow-meta">已存为草稿</small>
-                ) : !recordHasPrompt(record) ? (
-                  <small className="muted">无 Prompt，无法存为草稿</small>
-                ) : draftingId === record.prompt_id ? (
-                  <div className="actions">
-                    <input
-                      type="text"
-                      placeholder="草稿名称"
-                      value={draftName}
-                      disabled={draftBusy}
-                      onChange={(event) => setDraftName(event.target.value)}
-                    />
-                    <button
-                      onClick={() => void saveAsDraft(record)}
-                      disabled={draftBusy}
-                    >
-                      确认保存
-                    </button>
-                    <button onClick={cancelDraft} disabled={draftBusy}>
-                      取消
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => startDraft(record)}
-                    disabled={draftBusy}
-                  >
-                    存为草稿
-                  </button>
-                )}
-                {draftMessage && draftMessage.id === record.prompt_id && (
-                  <small
-                    className={
-                      draftMessage.kind === "ok"
-                        ? "workflow-meta"
-                        : "workflow-warning"
-                    }
-                  >
-                    {draftMessage.text}
-                  </small>
-                )}
-              </div>
-            </div>
+function renderPromptCard(record: HistoryRecord) {
+  const open = openId === record.prompt_id;
+  const checkpoints = snapshotFiles(record.model_snapshot, "checkpoints");
+  const loras = snapshotFiles(record.model_snapshot, "loras");
+  const cardOpen = promptCardOpen(record, openLightbox);
+  return (
+    <article className="history-card" key={record.prompt_id}>
+      <HistoryCardThumb record={record} onOpen={cardOpen} />
+      <div className="history-card-meta">
+        <div className="history-card-name" title={record.positive_prompt ?? ""}>
+          {summarize(record.positive_prompt)}
+        </div>
+        <div className="history-card-sub">
+          <span className={`compare-badge ${record.task_status}`}>
+            {STATUS_LABEL[record.task_status] ?? record.task_status}
+          </span>
+          <span>{formatTime(record.created_at)}</span>
+          <span>
+            {record.workflow_id ? workflowLabel(record.workflow_id) : "画布直接生成"}
+          </span>
+        </div>
+        {(checkpoints.length > 0 || loras.length > 0) && (
+          <div className="history-card-tags">
+            {checkpoints.map((name) => (
+              <span key={`cp-${name}`} className="rule-tag">{name}</span>
+            ))}
+            {loras.map((name) => (
+              <span key={`lora-${name}`} className="rule-tag">LoRA {name}</span>
+            ))}
           </div>
         )}
+        {record.last_error && (
+          <div className="history-card-warn">{record.last_error}</div>
+        )}
+        <div className="history-card-actions">
+          <button
+            onClick={() => setOpenId(open ? null : record.prompt_id)}
+          >
+            {open ? "收起" : "详情"}
+          </button>
+          {deleteButton(record)}
+        </div>
       </div>
+      {open && renderPromptDetail(record)}
+    </article>
+  );
+}
+
+function renderRecord(record: AggregateRecord) {
+  if (!isPromptRecord(record)) {
+    return record.kind === "vision" ? (
+      renderVisionRecord(record)
+    ) : (
+      renderWritingRecord(record)
     );
   }
+  return renderPromptRecord(record);
+}
+
+function renderCardRecord(record: AggregateRecord) {
+  if (!isPromptRecord(record)) {
+    return record.kind === "vision" ? (
+      renderVisionCard(record)
+    ) : (
+      renderWritingCard(record)
+    );
+  }
+  return renderPromptCard(record);
+}
 
   return (
     <section className="panel">
@@ -1235,8 +1455,12 @@ function renderRecord(record: AggregateRecord) {
             </div>
           ))}
         </div>
+      ) : view === "grid" ? (
+        <div className="history-grid">
+          {filtered.map(renderCardRecord)}
+        </div>
       ) : (
-        <div className={view === "grid" ? "history-grid" : "rule-list"}>
+        <div className="rule-list">
           {filtered.map(renderRecord)}
         </div>
       )}
