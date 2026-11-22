@@ -84,6 +84,17 @@ MIGRATION_REPORT: dict[str, Any] = {}
 _root_prepared = False
 _root_lock = threading.Lock()
 
+# Database schema assurance and the one-shot copy-folder relocation run once
+# per process; concurrent startup requests must not race the file moves.
+_db_initialized = False
+_db_lock = threading.Lock()
+
+# The normalized settings file is persisted once per process on first load;
+# later mutations go through the settings PUT endpoint, so a concurrent
+# first-load fan-out must not all replace settings.json at once on Windows.
+_settings_persisted = False
+_settings_lock = threading.Lock()
+
 # Local-only origins allowed by CORS. The production Web runtime is same-origin
 # (FastAPI serves both API and frontend), so no broad LAN/public origin is added.
 # The ComfyUI loopback origins are included so the external extension sidebar
@@ -177,6 +188,9 @@ def initialize_database(settings: dict[str, Any]) -> str:
         rule_store.ensure_schema(connection)
         asset_library.ensure_schema(connection)
         llm_history.ensure_schema(connection)
+        asset_library.migrate_copy_group_folders(
+            connection, Path(settings["storage"]["assets"]).expanduser()
+        )
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -249,7 +263,7 @@ def _ensure_node_token() -> None:
 
 
 def load_settings() -> dict[str, Any]:
-    global MIGRATION_REPORT, _root_prepared
+    global MIGRATION_REPORT, _root_prepared, _db_initialized, _settings_persisted
 
     # Prepare managed directories and migrate any legacy data once per process.
     # The lock keeps the first concurrent callers from racing the legacy
@@ -306,8 +320,16 @@ def load_settings() -> dict[str, Any]:
                 settings["prompt"]["protected_terms"] = []
 
     ensure_managed_directories(settings)
-    initialize_database(settings)
-    save_settings_file(settings)
+    if not _db_initialized:
+        with _db_lock:
+            if not _db_initialized:
+                initialize_database(settings)
+                _db_initialized = True
+    if not _settings_persisted:
+        with _settings_lock:
+            if not _settings_persisted:
+                save_settings_file(settings)
+                _settings_persisted = True
     return settings
 
 

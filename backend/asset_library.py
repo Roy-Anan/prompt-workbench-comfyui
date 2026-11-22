@@ -416,6 +416,63 @@ def _move_copy_to_group(
     )
 
 
+def migrate_copy_group_folders(
+    connection: sqlite3.Connection,
+    assets_dir: Path,
+) -> int:
+    """Relocate legacy flat managed copies into their group subfolder.
+
+    Older records stored a bare file name under ``copies/``; new records carry
+    ``<group-folder>/<token>``. This idempotent one-shot moves those legacy
+    files and rewrites ``storage_rel``; records already under a subfolder are
+    left untouched. A missing source file still gets a folder-prefixed rel so
+    the record resolves as missing inside the copies root rather than escaping
+    it.
+    """
+    _normalize_factory(connection)
+    rows = connection.execute(
+        "SELECT id, storage_rel, group_id FROM asset_item WHERE kind = 'copy'"
+    ).fetchall()
+    migrated = 0
+    copies_dir = (assets_dir / "copies").resolve()
+    for row in rows:
+        storage_rel = row["storage_rel"] or ""
+        if "/" in storage_rel or "\\" in storage_rel:
+            continue
+        group_folder = _group_folder(connection, row["group_id"])
+        src = (copies_dir / storage_rel).resolve() if storage_rel else None
+        inside_root = False
+        if src is not None:
+            try:
+                src.relative_to(copies_dir)
+                inside_root = True
+            except ValueError:
+                inside_root = False
+
+        if inside_root and src.is_file():
+            group_dir = assets_dir / "copies" / group_folder
+            group_dir.mkdir(parents=True, exist_ok=True)
+            dest_name = _unique_copy_name(group_dir, src.suffix.lower())
+            dest = group_dir / dest_name
+            shutil.move(str(src), str(dest))
+            new_rel = f"{group_folder}/{dest_name}"
+            try:
+                src.parent.rmdir()
+            except OSError:
+                pass
+        else:
+            basename = storage_rel.replace("\\", "/").split("/")[-1]
+            new_rel = f"{group_folder}/{basename}" if basename else ""
+
+        connection.execute(
+            "UPDATE asset_item SET storage_rel = ? WHERE id = ?",
+            (new_rel, row["id"]),
+        )
+        migrated += 1
+    connection.commit()
+    return migrated
+
+
 def import_copies(
     connection: sqlite3.Connection,
     assets_dir: Path,

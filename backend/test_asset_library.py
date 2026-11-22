@@ -327,6 +327,75 @@ def test_legacy_flat_copy_filename_still_resolves(tmp_path):
     conn.close()
 
 
+def test_migrate_legacy_flat_copies_into_group_folders(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    copies_dir = assets / "copies"
+    copies_dir.mkdir(parents=True, exist_ok=True)
+
+    group = asset_library.create_group(conn, "苏悦希")
+    default_id = next(
+        g["id"] for g in asset_library.list_groups(conn) if g["is_default"]
+    )
+    now = asset_library._now()
+
+    legacy_a = copies_dir / "aaa111.png"
+    legacy_b = copies_dir / "bbb222.png"
+    legacy_a.write_bytes(_png_bytes())
+    legacy_b.write_bytes(_png_bytes())
+    conn.execute(
+        "INSERT INTO asset_item(name, kind, storage_rel, group_id, created_at, updated_at) "
+        "VALUES (?, 'copy', ?, ?, ?, ?)",
+        ("a.png", legacy_a.name, group["id"], now, now),
+    )
+    conn.execute(
+        "INSERT INTO asset_item(name, kind, storage_rel, group_id, created_at, updated_at) "
+        "VALUES (?, 'copy', ?, ?, ?, ?)",
+        ("b.png", legacy_b.name, default_id, now, now),
+    )
+    conn.commit()
+
+    moved = asset_library.migrate_copy_group_folders(conn, assets)
+    assert moved == 2
+
+    items = asset_library.list_items(conn, assets)
+    by_group = {item["group_id"]: item for item in items}
+    custom = by_group[group["id"]]
+    default = by_group[default_id]
+    custom_folder = asset_library._group_folder(conn, group["id"])
+    assert custom["storage_rel"].startswith(f"{custom_folder}/")
+    assert default["storage_rel"].startswith("_default/")
+    assert (assets / "copies" / custom["storage_rel"]).read_bytes() == _png_bytes()
+    assert (assets / "copies" / default["storage_rel"]).read_bytes() == _png_bytes()
+    # No flat bare-name file remains in the copies root.
+    assert list(copies_dir.glob("*.png")) == []
+
+    # Second run is a no-op: records already carry a subfolder.
+    assert asset_library.migrate_copy_group_folders(conn, assets) == 0
+    conn.close()
+
+
+def test_migrate_legacy_missing_file_rewrites_rel(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    now = asset_library._now()
+    default_id = next(
+        g["id"] for g in asset_library.list_groups(conn) if g["is_default"]
+    )
+    conn.execute(
+        "INSERT INTO asset_item(name, kind, storage_rel, group_id, created_at, updated_at) "
+        "VALUES (?, 'copy', ?, ?, ?, ?)",
+        ("ghost.png", "ghost.png", default_id, now, now),
+    )
+    conn.commit()
+
+    asset_library.migrate_copy_group_folders(conn, assets)
+    item = asset_library.list_items(conn, assets)[0]
+    assert item["storage_rel"] == "_default/ghost.png"
+    assert item["exists"] is False
+    conn.close()
+
+
 def test_rename_group_renames_physical_folder(tmp_path):
     conn = _db(tmp_path)
     assets = tmp_path / "assets"
