@@ -1690,7 +1690,7 @@ export default function App() {
 
   const pageTitle =
     activePage === "workflows"
-      ? "工作流工作区"
+      ? "提示词创作"
       : activePage === "workflow-library"
         ? "工作流管理"
         : activePage === "models"
@@ -1725,7 +1725,7 @@ export default function App() {
             onClick={() => switchPage("workflows")}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-            工作流工作区
+            提示词创作
           </div>
           {activePage === "workflows" && (
             <div className="w-steps">

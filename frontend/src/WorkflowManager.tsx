@@ -243,7 +243,7 @@ export default function WorkflowManager() {
             {showArchived
               ? "回收站是空的。"
               : cards.length === 0
-                ? "还没有导入工作流，先在「工作流工作区」导入一个。"
+                ? "还没有导入工作流，先在「提示词创作」页导入一个。"
                 : "没有匹配筛选条件的工作流。"}
           </p>
         </div>

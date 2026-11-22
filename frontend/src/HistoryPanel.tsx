@@ -1104,7 +1104,7 @@ function renderPromptDetail(record: HistoryRecord) {
               <button
                 className="secondary"
                 onClick={goToWorkbench}
-                title="跳转到工作流工作区查看草稿"
+                title="跳转到提示词创作查看草稿"
               >
                 {record.linked_draft.name}
               </button>

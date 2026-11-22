@@ -193,7 +193,7 @@ export default function WritingAssistant() {
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
-  // 本页只列出写作类身份；提示词类助手在工作流工作区。
+  // 本页只列出写作类身份；提示词类助手在提示词创作页。
   const writingPersonas = personas.filter((p) => p.kind !== "prompt");
   // 写作页不提供负向词模式。
   const candidateModeOptions = modes.filter((m) => !m.negative_output);

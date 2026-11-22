@@ -1014,7 +1014,7 @@ button:disabled { background: var(--w-bg-2); color: var(--w-text-3); border-colo
 /* 侧栏随主内容滚动时保持固定可见（修复既有滚出视野问题） */
 .w-sidebar { position: sticky; top: 0; height: 100vh; }
 
-/* —— 阶段二：工作流工作区 —— */
+/* —— 阶段二：提示词创作 —— */
 /* 摘要信息卡紧凑，层级收敛 */
 .w-summary { gap: var(--sp-3); margin-bottom: var(--sp-3); }
 .w-sum-block { padding: 14px 16px; }
