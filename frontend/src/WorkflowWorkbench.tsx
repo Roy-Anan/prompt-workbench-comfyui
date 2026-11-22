@@ -3105,6 +3105,12 @@ export default function WorkflowWorkbench({
                   </p>
                   <div className="actions">
                     <button
+                      onClick={() => void writePrompts()}
+                      disabled={busy || !detail.manifest.confirmed}
+                    >
+                      覆盖保存
+                    </button>
+                    <button
                       onClick={() => void exportWorkflowJson()}
                       disabled={busy}
                     >
