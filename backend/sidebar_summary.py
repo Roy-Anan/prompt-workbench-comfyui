@@ -187,7 +187,10 @@ def build_summary(data_root: Path, settings: dict[str, Any]) -> dict[str, Any]:
             sections["rules"] = _rules_section(connection)
             sections["history"] = _history_section(connection)
             sections["assets"] = _assets_section(connection, data_root / "assets")
-    except (OSError, ValueError, sqlite3.Error) as exc:
+    except Exception as exc:
+        # Each section must degrade alone. A narrower catch let a TypeError
+        # (e.g. a connection without row_factory) escape as a 500 that took the
+        # whole sidebar down instead of marking one section failed.
         sections.setdefault("rules", _section([], 0, str(exc)))
         sections.setdefault("history", _section([], 0, str(exc)))
         sections.setdefault("assets", _section([], 0, str(exc)))
@@ -197,13 +200,13 @@ def build_summary(data_root: Path, settings: dict[str, Any]) -> dict[str, Any]:
         workflows_section, drafts_section = _workflows_and_drafts(store)
         sections["workflows"] = workflows_section
         sections["drafts"] = drafts_section
-    except (OSError, ValueError, WorkflowError) as exc:
+    except Exception as exc:
         sections.setdefault("workflows", _section([], 0, str(exc)))
         sections.setdefault("drafts", _section([], 0, str(exc)))
 
     try:
         sections["loras"] = _loras_section(settings)
-    except (OSError, ValueError, sqlite3.Error) as exc:
+    except Exception as exc:
         sections["loras"] = _section([], 0, str(exc))
 
     return {

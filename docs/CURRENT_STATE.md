@@ -20,7 +20,7 @@
 - **草稿与版本（M5）**：多份独立命名草稿箱；收藏/标签/置顶/搜索/回收站/跨流复制/环境快照/双向索引；版本快照只读列表、恢复与片段级 diff。
 - **LoRA 资料（M8）**：同名 json 元数据只读扫描与完整度标注；手动资料优先；触发词标签与组合只读建议；手动资料前端编辑；身份归并/同底座搭配/共享触发词只读提示；身份哈希缓存（checkpoint 排除）。身份归并与角色卡落盘维持只读。
 - **数据维护（M9）**：整库备份只读导出与备份恢复写入（含完整性校验）；诊断只读巡检（损坏 JSON/孤儿文件/DB integrity）；设置白名单导入导出。数据库结构与损坏数据不做自动迁移/自动改写修复。
-- **UI 与交付（M10）**：深浅主题（跟随系统）、字号三档、布局与筛选偏好本地记忆；中文优先界面；素材库分组/标签/检索与两种导入。
+- **UI 与交付（M10）**：浅色为默认主题、顶栏可切深色（本地记忆），字号三档、布局与筛选偏好本地记忆；中文优先界面；素材库分组/标签/检索与两种导入。
 
 ## 3. 未验证 / 遗留项
 
@@ -45,10 +45,9 @@
 - **创作模式改为目录遍历文件注册表（R158，2026-11-22）**：`modes/` 目录下扁平 `.txt`，文件名 stem 即 id 即下拉显示名（允许中文），正文一句祈使指令；取代原先前后端 + 扩展节点四处写死的英文 slug 枚举。后端 `prompt_personas.py` 加 `_scan_modes` / `list_modes` / `resolve_mode` / `get_mode`，缓存键纳入 modes 目录；`GET /api/modes` 投影；请求校验走注册表，未知模式报 `unknown mode`。两个特殊行为保留代码标志：`空白直出`（`skip_existing`，不携带现有 Prompt）、`负向词`（`negative_output`，走负向输出口，写作页剔除）；响应带 `mode_negative_output`。七个内置模式迁入 `modes/`（起草 / 润色 / 精简 / 续写 / 空白直出 / 中英对照 / 负向词），旧英文 slug 经别名表兼容历史记录、浏览器记忆与已保存 ComfyUI 图。工作台与写作助手前端改拉 `/api/modes` 动态渲染；扩展节点 `mode` combo 改静态空占位并纳入 `VALIDATE_INPUTS` 放行，代理白名单加 `modes`，面板 JS 加 mode 选择器源；负向分流改读后端标志（旧 `negative` slug 兜底）。R154 模板「固定枚举四处联动」口径已反转为文件注册表。
 - **后端运行日志落盘与查看入口（R159，2026-11-22）**：新增 `backend/runtime_log.py`，启动时在 `userdata/logs/workbench.log` 挂 `RotatingFileHandler`（1MB × 3 备份，UTF-8），记录后端启停、关键错误与 HTTP 5xx；候选 LLM 调用失败/空回携带模型名与原因串写入日志；`GET /api/logs?lines=` 鉴权后只读返回末尾有界行数与本地路径。前端「服务与设置」页新增「运行日志」分区：刷新读取末尾记录、导出 `.log`；日志不进整库备份（`backup_export` 已排除 `logs/`），不含模型权重、原图或完整 Prompt。
 - **候选上下文默认窗口（R160，2026-11-22）**：`llm_client.chat` 未传 `num_ctx` 时默认注入 8192（Ollama 裸默认仅 4096，现有正/负向 Prompt + 规则层拼到 4322 token 会被 llama-server 以 400 拒绝）；UI/API 显式传入的 `num_ctx` 优先。LLM 调用失败时把 Ollama 响应体（截断 300 字符）带进错误串与运行日志。
+- **审查修复与视觉升级（R161，2026-11-22）**：按全仓审查清单修 9 项——①`/api/sidebar/summary` 恒 500：`asset_library.list_items` 按列名读 `row["id"]`，而侧栏连接无 `row_factory`，改为 `row[0]` 并让 asset 入口统一归一化工厂，素材读取同时由 N+1 查询改为单条 JOIN + 单次标签聚合；②异常型 500 不进日志：中间件 `try/except` 包住 `call_next` 并 `logger.exception` 后重抛；③队列 `submitting` 卡死：启动时 `requeue_stale_submitting` 把残留项回滚为 `pending`，调度异常改为写日志；④备份恢复先 checkpoint 并清理 `-wal`/`-shm`，返回 `restart_required`；⑤首屏六端点 `Promise.all` 改 `allSettled`，单个端点失败不再整页空白；⑥侧栏摘要每段改为 `Exception` 兜底，单域失败不再拖垮整份摘要；⑦`VALIDATE_INPUTS` 参数补默认值，旧图缺 `genre`/`style`/`mode` 不再 TypeError；⑧历史回显模式名与 `modes/` 注册表对齐（起草 / 负向词）；⑨空态、日志、弹窗等视觉细节统一。UI 升级：**默认浅色主题**（顶栏可切深色并本地记忆），重调浅色令牌（冷灰底 + 纯白卡 + 靛蓝主色）、侧栏吸顶与选中竖条、顶栏毛玻璃吸顶、按钮/输入统一 38px 高与焦点环、徽章胶囊、表头渐变与行悬停、细滚动条、空态虚线卡与 `prefers-reduced-motion` 降级。
 - **规则套改为目录遍历 + 目录内可选 meta.json（R149，2026-11-21）**：`models/<id>/` 遍历列出规则套，`rules.txt` 必选、`meta.json` 可选；显示名 / 架构 / 文件名可从正文头部 `Display Name` / `Base Architecture` / `Exact Checkpoint Filename` 解析兜底，meta 同名字段优先；退役根 `manifest.json`，13 套存量迁移为目录内 meta.json。停用 / 版本归档 / 回滚 / 删除状态落在目录内 meta 与 `archive/`，staging 发布合并 meta；内容哈希读取时实时计算，不再手工登记。新增与维护流程见 `prompt_profiles/PROFILES_GUIDE.md`。
-- **已知环境型测试失败（非回归，勿改测试逻辑）**：
-  - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。
-  - `test_sidebar_summary.py::test_empty_sections_report_zero_totals`：读到本机真实非零计数。
+- **测试密闭性（R161，2026-11-22）**：原记的两条「已知环境型失败」已消除——侧栏空库用例改为 monkeypatch `model_catalog.fetch_catalog` 固定离线，并新增「库中有一张素材」用例覆盖曾掩盖 500 的 assets 分支；stopper 用例把运行记录路径指向 tmp。当前后端全量回归 **471 passed**，不再依赖本机 ComfyUI/Ollama 状态与仓库根残留文件。
 - **显存约束**：本机 RTX 4060 Laptop 8GB，本地 LLM 与 ComfyUI 不同时驻留；出图前必须确认 LLM 已卸载、显存达标，闸门 fail-closed。
 - 其余开放方向（布局记忆深化、视觉打磨等）见 `docs/ROADMAP.md` 当前剩余方向段；安全边界（白名单写入、unknown 不臆测、CSRF、回环绑定、fail-closed 闸门）不放宽，未拍板口径不擅自实现。
 

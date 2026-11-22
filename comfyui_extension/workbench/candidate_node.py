@@ -33,13 +33,13 @@ import backend_client
 # into the combo by the extension JS. New canonical ids are Chinese file
 # stems and pass through unchanged.
 MODE_LABELS = {
-    "draft": "起草补全",
+    "draft": "起草",
     "polish": "润色",
     "trim": "精简",
     "continue": "续写",
     "fresh": "空白直出",
     "bilingual": "中英对照",
-    "negative": "负向补全",
+    "negative": "负向词",
     "none": "无",
 }
 
@@ -103,7 +103,15 @@ class WorkbenchPromptCandidate:
     CATEGORY = "Workbench/LLM"
 
     @classmethod
-    def VALIDATE_INPUTS(cls, model, mode, persona, prompt_profile, genre, style):
+    def VALIDATE_INPUTS(
+        cls,
+        model=None,
+        mode=None,
+        persona=None,
+        prompt_profile=None,
+        genre=None,
+        style=None,
+    ):
         """Let the dynamic picker fields accept backend-filled combo values.
 
         The real option lists live on the workbench backend and are filled into
@@ -112,6 +120,10 @@ class WorkbenchPromptCandidate:
         skips its default enum/min/max check for every input named in this
         method's signature, so returning ``True`` keeps the picker fields
         free-form.
+
+        Every parameter carries a default: graphs saved before ``genre`` /
+        ``style`` / ``mode`` existed simply do not pass them, and ComfyUI calls
+        this hook with only the inputs the instance actually has.
         """
         return True
 

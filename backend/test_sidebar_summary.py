@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
+import asset_library
 import datadir
 import generation_history
 import model_identity
 import rule_store
+import sidebar_summary
 
 
 def _node_headers(main) -> dict[str, str]:
@@ -37,13 +40,58 @@ def test_summary_allows_node_token_read_only(client):
     }
 
 
-def test_empty_sections_report_zero_totals(client):
+def test_empty_sections_report_zero_totals(client, monkeypatch):
     test_client, main = client
+
+    # The LoRA section asks the live ComfyUI instance when the machine is
+    # running one, which makes an "empty data root" assertion fail on a real
+    # desktop. Pin it offline so this stays a hermetic test of the projection.
+    monkeypatch.setattr(
+        sidebar_summary.model_catalog,
+        "fetch_catalog",
+        lambda **_kwargs: {"online": False, "error": "offline", "loras": []},
+    )
 
     body = test_client.get("/api/sidebar/summary", headers=_node_headers(main)).json()
     for section in body["sections"].values():
         assert section["total"] == 0
         assert section["items"] == []
+
+
+def test_assets_section_lists_existing_items(client, monkeypatch):
+    """Regression: assets were read through a connection without row_factory.
+
+    ``list_items`` used to index the id query by column name, so any non-empty
+    asset table raised TypeError on the plain-tuple connection built here and
+    the whole sidebar summary returned 500. An empty table hid that.
+    """
+    test_client, main = client
+    monkeypatch.setattr(
+        sidebar_summary.model_catalog,
+        "fetch_catalog",
+        lambda **_kwargs: {"online": False, "error": "offline", "loras": []},
+    )
+
+    with model_identity.connect(datadir.database_path(main.DATA_ROOT)) as connection:
+        asset_library.ensure_schema(connection)
+        asset_library.import_copies(
+            connection,
+            main.DATA_ROOT / "assets",
+            [
+                {
+                    "name": "picked.png",
+                    "data": base64.b64encode(b"fake-png-bytes").decode("ascii"),
+                }
+            ],
+            tag_names=["角色"],
+        )
+
+    resp = test_client.get("/api/sidebar/summary", headers=_node_headers(main))
+    assert resp.status_code == 200
+    assets = resp.json()["sections"]["assets"]
+    assert assets["total"] == 1
+    assert assets["items"][0]["name"] == "picked.png"
+    assert assets["items"][0]["tags"] == ["角色"]
 
 
 def test_summary_redacts_prompt_text_and_notes(client):

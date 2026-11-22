@@ -19,6 +19,7 @@ from typing import Any
 import comfy_client
 import datadir
 import model_identity
+import runtime_log
 import task_queue
 
 TICK_SECONDS = 3.0
@@ -107,9 +108,10 @@ def _run() -> None:
             try:
                 _dispatch_one()
             except Exception:
-                # The dispatcher must never die on a transient error; the next
-                # tick retries. Failures are recorded per item where possible.
-                pass
+                # Never let the thread die on a transient error, but leave a
+                # trace: a silently swallowed failure looks exactly like an
+                # empty queue, and a stuck item is otherwise undiagnosable.
+                runtime_log.logger().exception("队列调度异常，下一轮重试")
         _stop_event.wait(TICK_SECONDS)
 
 

@@ -403,11 +403,27 @@ class QueueGlobalPause(BaseModel):
     paused: bool
 
 
+def _recover_orphan_queue_items() -> None:
+    """Requeue items left in ``submitting`` by a previous process."""
+    try:
+        with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+            task_queue.ensure_schema(connection)
+            count = task_queue.requeue_stale_submitting(connection)
+    except Exception:
+        runtime_log.logger().exception("启动恢复队列失败")
+        return
+    if count:
+        runtime_log.logger().warning(
+            "启动恢复：%s 条队列项停在上次提交中，已重新排队", count
+        )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _ensure_node_token()
     runtime_log.setup_logging(DATA_ROOT)
     runtime_log.logger().info("工作台后端启动（%s）", APP_VERSION)
+    _recover_orphan_queue_items()
     queue_dispatcher.start()
     try:
         yield
@@ -539,7 +555,16 @@ async def require_session(request: Request, call_next):
                 content={"detail": "CSRF token mismatch"},
             )
 
-    response = await call_next(request)
+    # Unhandled exceptions never reach the check below: Starlette's outermost
+    # ServerErrorMiddleware turns them into the 500 response, so the only place
+    # that can see them is here, around the call itself.
+    try:
+        response = await call_next(request)
+    except Exception:
+        runtime_log.logger().exception(
+            "请求异常 %s %s", request.method, request.url.path
+        )
+        raise
     if response.status_code >= 500:
         runtime_log.logger().error(
             "请求失败 %s %s -> HTTP %s",

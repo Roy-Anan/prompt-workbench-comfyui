@@ -339,8 +339,13 @@ def test_comfyui_launcher_respects_disable_env(monkeypatch):
     assert "--auto-launch" not in captured["cmd"]
 
 
-def test_stopper_fallback_no_health_match_does_not_touch(monkeypatch):
+def test_stopper_fallback_no_health_match_does_not_touch(monkeypatch, tmp_path):
     stopper = _load("stopper", "workbench_stopper.py")
+    # Isolate from the repo root: a real launcher record left there by a running
+    # instance would take the "corrupt record" branch and change the outcome.
+    monkeypatch.setattr(
+        stopper, "RUNTIME_RECORD_FILE", tmp_path / ".workbench-runtime.json"
+    )
     monkeypatch.setattr(stopper, "_health_app_matches", lambda h, p: False)
     listed: list[int] = []
     monkeypatch.setattr(stopper, "_listening_pids",

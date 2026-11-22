@@ -78,7 +78,20 @@ def connect(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def _normalize_factory(connection: sqlite3.Connection) -> None:
+    """Every helper here reads rows by column name.
+
+    Most callers hand over ``asset_library.connect()`` (factory already set), but
+    other modules open plain connections for their own metadata tables. Rather
+    than make every read tuple-safe, the public entry points normalize the
+    caller's short-lived connection once.
+    """
+    if connection.row_factory is not sqlite3.Row:
+        connection.row_factory = sqlite3.Row
+
+
 def ensure_schema(connection: sqlite3.Connection) -> None:
+    _normalize_factory(connection)
     connection.executescript(_SCHEMA)
     _ensure_default_group(connection)
     connection.commit()
@@ -480,12 +493,56 @@ def list_items(
     sql += " ORDER BY i.created_at DESC, i.id DESC"
 
     rows = connection.execute(sql, params).fetchall()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        record = _get_record(connection, int(row["id"]), assets_dir)
-        if record is not None:
-            items.append(record)
-    return items
+    # ``row[0]`` works on plain tuples and on sqlite3.Row, so this stays correct
+    # whichever factory the caller's connection uses.
+    ids = [int(row[0]) for row in rows]
+    if not ids:
+        return []
+
+    # One batched read instead of one SELECT per asset: every caller (素材库页、
+    # 总览、侧栏摘要) paid N queries plus N tag queries before, which got slow
+    # with a few hundred assets. Tag names are packed with the unit separator so
+    # the whole record still comes from a single statement.
+    placeholders = ",".join("?" for _ in ids)
+    cursor = connection.execute(
+        f"""
+        SELECT i.*, g.name AS group_name,
+               (SELECT GROUP_CONCAT(name, char(31)) FROM (
+                   SELECT t.name FROM asset_tag t
+                   JOIN asset_item_tag at ON at.tag_id = t.id
+                   WHERE at.asset_id = i.id
+                   ORDER BY t.name COLLATE NOCASE
+               )) AS tag_blob
+        FROM asset_item i
+        LEFT JOIN asset_group g ON g.id = i.group_id
+        WHERE i.id IN ({placeholders})
+        """,
+        ids,
+    )
+    # Column names come from the cursor so plain-tuple connections work too.
+    columns = [description[0] for description in cursor.description or ()]
+    by_id: dict[int, dict[str, Any]] = {}
+    for row in cursor.fetchall():
+        values = dict(zip(columns, row))
+        record = {
+            "id": int(values["id"]),
+            "name": values["name"],
+            "kind": values["kind"],
+            "storage_rel": values["storage_rel"],
+            "source_path": values["source_path"],
+            "group_id": int(values["group_id"]) if values["group_id"] is not None else None,
+            "group_name": values["group_name"],
+            "size_bytes": values["size_bytes"],
+            "ext": values["ext"],
+            "note": values["note"] or "",
+            "tags": [tag for tag in (values["tag_blob"] or "").split("\x1f") if tag],
+            "created_at": values["created_at"],
+            "updated_at": values["updated_at"],
+        }
+        record["exists"] = _record_exists(record, assets_dir)
+        by_id[record["id"]] = record
+
+    return [by_id[asset_id] for asset_id in ids if asset_id in by_id]
 
 
 def get_item(connection: sqlite3.Connection, asset_id: int, assets_dir: Path | None) -> dict[str, Any] | None:
@@ -556,6 +613,7 @@ def get_record(
     connection: sqlite3.Connection, asset_id: int, assets_dir: Path | None = None
 ) -> dict[str, Any] | None:
     """Public read access to one asset record (used by other modules)."""
+    _normalize_factory(connection)
     return _get_record(connection, asset_id, assets_dir)
 
 
@@ -565,6 +623,7 @@ def resolve_image_path(
     asset_id: int,
 ) -> Path | None:
     """Return the on-disk path for the protected proxy, or None when unavailable."""
+    _normalize_factory(connection)
     record = _get_record(connection, asset_id, assets_dir)
     if record is None:
         return None

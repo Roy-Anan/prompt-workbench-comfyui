@@ -45,24 +45,15 @@ function readStoredPage(): PageKey {
 type Theme = "dark" | "light";
 type FontSize = "small" | "normal" | "large";
 
-function systemTheme(): Theme {
-  try {
-    return window.matchMedia("(prefers-color-scheme: light)").matches
-      ? "light"
-      : "dark";
-  } catch {
-    return "dark";
-  }
-}
-
 function readStoredTheme(): Theme {
   try {
     const value = localStorage.getItem("workbench.theme");
     if (value === "dark" || value === "light") return value;
   } catch {
-    // 本地存储不可用时跟随系统。
+    // 本地存储不可用时回落到默认主题。
   }
-  return systemTheme();
+  // 浅色为默认主题：工作台以浅色为主视觉，深色由顶栏手动切换并记忆。
+  return "light";
 }
 
 function readStoredFont(): FontSize {
@@ -603,22 +594,39 @@ export default function App() {
   }, []);
 
   async function refresh() {
-    const [healthResult, settingsResult, serviceResult, catalogResult, ruleResult, profileResult] =
-      await Promise.all([
-        apiGet<Health>("/api/health"),
-        apiGet<Settings>("/api/settings"),
-        apiGet<ServiceStatus>("/api/services/status"),
-        apiGet<ModelCatalog>("/api/models/catalog"),
-        apiGet<{ items: RuleRecord[] }>("/api/rules"),
-        apiGet<{ items: ProfileSummary[] }>("/api/profiles"),
-      ]);
+    // Settled, not all-or-nothing: one unavailable endpoint (e.g. the model
+    // catalog with ComfyUI offline) must not blank the whole settings area.
+    const results = await Promise.allSettled([
+      apiGet<Health>("/api/health"),
+      apiGet<Settings>("/api/settings"),
+      apiGet<ServiceStatus>("/api/services/status"),
+      apiGet<ModelCatalog>("/api/models/catalog"),
+      apiGet<{ items: RuleRecord[] }>("/api/rules"),
+      apiGet<{ items: ProfileSummary[] }>("/api/profiles"),
+    ]);
+    const pick = (index: number): unknown => {
+      const result = results[index];
+      return result.status === "fulfilled" ? result.value : undefined;
+    };
 
-    setHealth(healthResult);
-    setSettings(settingsResult);
-    setServices(serviceResult);
-    setCatalog(catalogResult);
-    setRules(ruleResult.items);
-    setProfiles(profileResult.items);
+    const healthResult = pick(0) as Health | undefined;
+    const settingsResult = pick(1) as Settings | undefined;
+    if (healthResult) setHealth(healthResult);
+    if (settingsResult) setSettings(settingsResult);
+    const serviceResult = pick(2) as ServiceStatus | undefined;
+    if (serviceResult) setServices(serviceResult);
+    const catalogResult = pick(3) as ModelCatalog | undefined;
+    if (catalogResult) setCatalog(catalogResult);
+    const ruleResult = pick(4) as { items: RuleRecord[] } | undefined;
+    if (ruleResult) setRules(ruleResult.items);
+    const profileResult = pick(5) as { items: ProfileSummary[] } | undefined;
+    if (profileResult) setProfiles(profileResult.items);
+
+    // Health is the only endpoint that decides connectivity; alert on it alone
+    // so a single degraded panel shows as a partial warning, not a dead app.
+    if (!healthResult) {
+      throw new Error("健康检查失败：本地服务未响应");
+    }
 
     // 档案目录路径为只读辅助信息；独立容错，取不到不影响主面板。
     apiGet<ProfileDirInfo>("/api/profiles/dir")
@@ -1657,8 +1665,8 @@ export default function App() {
     <div className="w-app">
       <aside className="w-sidebar">
         <div>
-          <div className="w-brand-title">ComfyUI Prompt Workbench</div>
-          <div className="w-brand-sub">本地 AI 绘图提示词工作台</div>
+          <div className="w-brand-title">Prompt Workbench</div>
+          <div className="w-brand-sub">ComfyUI · 本地提示词工作台</div>
         </div>
 
         <nav className="w-nav-group">
@@ -1735,7 +1743,7 @@ export default function App() {
 
       <div className="w-main">
         <header className="w-topbar">
-          <div className="w-brand-title" style={{ fontSize: "15px" }}>{pageTitle}</div>
+          <div className="w-brand-title w-topbar-title">{pageTitle}</div>
           <div className="w-statuses">
             <span className={`w-status ${services?.ollama.online ? "online" : "offline"}`}>
               <span className="w-dot" />Ollama {services?.ollama.online ? "在线" : "离线"}

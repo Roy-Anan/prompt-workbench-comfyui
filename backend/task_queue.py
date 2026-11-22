@@ -298,6 +298,24 @@ def mark_failed(
     connection.commit()
 
 
+def requeue_stale_submitting(connection: sqlite3.Connection) -> int:
+    """Return orphaned ``submitting`` rows to ``pending`` on startup.
+
+    ``submitting`` is written just before the submit call. If the process dies
+    in between (restart, Ctrl+C, crash) or the follow-up write fails, the row is
+    "settled" for good: never retried, never cancellable, and it blocks the
+    whole queue. Only call this at startup, before the dispatcher runs, when
+    nothing can be genuinely in flight.
+    """
+    cursor = connection.execute(
+        "UPDATE workbench_queue SET status = 'pending', updated_at = ? "
+        "WHERE status = 'submitting'",
+        (_now(),),
+    )
+    connection.commit()
+    return cursor.rowcount or 0
+
+
 def next_ready(connection: sqlite3.Connection) -> dict[str, Any] | None:
     """First item eligible for dispatch: ``pending`` (not paused), in order."""
     row = connection.execute(

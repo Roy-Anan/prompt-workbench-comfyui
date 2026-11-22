@@ -111,6 +111,30 @@ def _atomic_write(target: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _prepare_database_replacement(root: Path) -> None:
+    """Checkpoint and drop WAL sidecars before the live database is swapped.
+
+    Replacing the main file while a leftover ``-wal`` sits next to it can leave
+    the pair out of sync, and on Windows an open handle makes ``os.replace``
+    fail outright with a bare PermissionError. This is best-effort: if a
+    connection still holds the file, the swap below reports the real error.
+    """
+    database = root / DATABASE_REL
+    if not database.exists():
+        return
+    try:
+        with sqlite3.connect(database, timeout=2.0) as connection:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error:
+        pass
+    for suffix in ("-wal", "-shm"):
+        side = database.with_name(database.name + suffix)
+        try:
+            side.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def restore_backup(
     root: Path,
     archive_bytes: bytes,
@@ -121,6 +145,11 @@ def restore_backup(
 
     Raises :class:`RestoreError` before writing existing data when the archive
     is invalid, fails integrity, or the pre-restore backup cannot be created.
+
+    File members are written first and the database last, so a failed restore
+    leaves the previous database in place; the returned ``restart_required``
+    flag tells the UI the running instance still holds old connections and
+    should be restarted before the restored data is trusted.
     """
     root = root.resolve()
     if not archive_bytes:
@@ -214,12 +243,14 @@ def restore_backup(
         restored.append(rel.as_posix())
 
     if database_member is not None:
+        _prepare_database_replacement(root)
         _atomic_write(root / DATABASE_REL, database_member[1])
         db_status = "restored"
 
     return {
         "pre_backup": f"backups/{pre_backup_name}",
         "overwrite": overwrite,
+        "restart_required": db_status == "restored",
         "manifest_version": manifest.get("version"),
         "manifest_generated_at": manifest.get("generated_at"),
         "restored_count": len(restored),

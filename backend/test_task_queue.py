@@ -197,3 +197,24 @@ def test_settled_item_cannot_be_cancelled_or_paused(client):
         f"/api/queue/{queue_id}/move", headers=AUTH, json={"direction": "up"}
     )
     assert moved.status_code == 409
+
+
+def test_requeue_stale_submitting_item_on_startup(client):
+    """A crash between mark_submitting and mark_submitted must not wedge the queue."""
+    test_client, main = client
+    workflow_id = _import(test_client, _api_workflow())
+    _confirm(test_client, workflow_id)
+    queue_id = _enqueue(test_client, workflow_id).json()["queue_id"]
+
+    with model_identity.connect(datadir.database_path(main.DATA_ROOT)) as connection:
+        task_queue.ensure_schema(connection)
+        task_queue.mark_submitting(connection, queue_id)
+        assert task_queue.requeue_stale_submitting(connection) == 1
+
+    listed = test_client.get("/api/queue", headers=AUTH).json()
+    assert [item["queue_id"] for item in listed["items"]] == [queue_id]
+    assert listed["items"][0]["status"] == "pending"
+
+    # Startup runs this once; a second run must be a no-op.
+    with model_identity.connect(datadir.database_path(main.DATA_ROOT)) as connection:
+        assert task_queue.requeue_stale_submitting(connection) == 0
