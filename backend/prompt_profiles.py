@@ -70,6 +70,13 @@ META_FIELDS = (
     "author",
     "research_status",
     "source",
+    # Model-management card fields (R165): hand-filled summary shown on the
+    # card; the full rule body still lives in rules.txt.
+    "strengths",
+    "tags",
+    "cover_asset_id",
+    "model_page",
+    "trust_level",
 )
 
 # Sections a rules file is expected to carry. Missing sections are recorded as
@@ -239,6 +246,20 @@ def _build_entry(profile_id: str, model_dir: Path, seen_ids: set[str]) -> dict[s
     if not isinstance(incompatible, list):
         incompatible = []
 
+    tags = meta.get("tags")
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t).strip() for t in tags if str(t).strip()]
+
+    cover_raw = meta.get("cover_asset_id")
+    cover_asset_id: int | None
+    if isinstance(cover_raw, int):
+        cover_asset_id = cover_raw
+    elif isinstance(cover_raw, str) and cover_raw.strip().isdigit():
+        cover_asset_id = int(cover_raw.strip())
+    else:
+        cover_asset_id = None
+
     entry: dict[str, Any] = {
         "id": profile_id,
         "display_name": str(meta.get("display_name") or header.get("display_name") or profile_id),
@@ -255,6 +276,11 @@ def _build_entry(profile_id: str, model_dir: Path, seen_ids: set[str]) -> dict[s
         "research_status": str(meta.get("research_status") or ""),
         "trigger_words": trigger_words,
         "incompatible_architectures": incompatible,
+        "strengths": str(meta.get("strengths") or ""),
+        "tags": tags,
+        "cover_asset_id": cover_asset_id,
+        "model_page": str(meta.get("model_page") or ""),
+        "trust_level": str(meta.get("trust_level") or ""),
         "exists": exists,
         "content_hash": content_hash,
         "section_warnings": warnings,
@@ -324,6 +350,7 @@ def list_profiles() -> list[dict[str, Any]]:
                 "architecture": entry.get("architecture"),
                 "enabled": bool(entry.get("enabled", True)),
                 "version": entry.get("version", ""),
+                "exists": bool(entry.get("exists", False)),
                 "auto_eligible": entry.get("auto_eligible", False),
                 "errors": entry.get("errors", []),
                 "section_warnings": entry.get("section_warnings", []),
@@ -331,6 +358,13 @@ def list_profiles() -> list[dict[str, Any]]:
                 "aliases": entry.get("aliases", []),
                 "checkpoint_patterns": entry.get("checkpoint_patterns", []),
                 "research_status": entry.get("research_status", ""),
+                "strengths": entry.get("strengths", ""),
+                "tags": entry.get("tags", []),
+                "cover_asset_id": entry.get("cover_asset_id"),
+                "model_page": entry.get("model_page", ""),
+                "trust_level": entry.get("trust_level", ""),
+                "author": entry.get("author", ""),
+                "trigger_words": entry.get("trigger_words", []),
             }
         )
     return projection

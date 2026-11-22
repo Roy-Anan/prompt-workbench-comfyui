@@ -9,13 +9,19 @@ import {
 import { formatStructured } from "./format";
 import AssetLibrary from "./AssetLibrary";
 import HistoryPanel from "./HistoryPanel";
+import InjectionDocs from "./InjectionDocs";
+import ModelManager from "./ModelManager";
 import VisionPanel from "./VisionPanel";
+import WorkflowManager from "./WorkflowManager";
 import WorkflowWorkbench from "./WorkflowWorkbench";
 import WritingAssistant from "./WritingAssistant";
 
 type PageKey =
   | "settings"
   | "workflows"
+  | "workflow-library"
+  | "models"
+  | "injection"
   | "writing"
   | "vision"
   | "history"
@@ -25,6 +31,9 @@ type PageKey =
 const PAGE_KEYS: PageKey[] = [
   "settings",
   "workflows",
+  "workflow-library",
+  "models",
+  "injection",
   "writing",
   "vision",
   "history",
@@ -1682,7 +1691,13 @@ export default function App() {
   const pageTitle =
     activePage === "workflows"
       ? "工作流工作区"
-      : activePage === "writing"
+      : activePage === "workflow-library"
+        ? "工作流管理"
+        : activePage === "models"
+          ? "模型管理"
+          : activePage === "injection"
+            ? "注入文本"
+            : activePage === "writing"
         ? "写作助手"
         : activePage === "vision"
           ? "图片识别"
@@ -1725,6 +1740,27 @@ export default function App() {
               <div className="w-step" onClick={() => goToStep("09")}><span className="num">09</span>生成历史</div>
             </div>
           )}
+          <div
+            className={`w-nav-item ${activePage === "workflow-library" ? "active" : ""}`}
+            onClick={() => switchPage("workflow-library")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="14" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="3" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" /><rect x="14" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" /></svg>
+            工作流管理
+          </div>
+          <div
+            className={`w-nav-item ${activePage === "models" ? "active" : ""}`}
+            onClick={() => switchPage("models")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /><path d="M4 7l8 4 8-4M12 11v10" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
+            模型管理
+          </div>
+          <div
+            className={`w-nav-item ${activePage === "injection" ? "active" : ""}`}
+            onClick={() => switchPage("injection")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 10h10M4 15h16M4 20h7" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+            注入文本
+          </div>
           <div
             className={`w-nav-item ${activePage === "writing" ? "active" : ""}`}
             onClick={() => switchPage("writing")}
@@ -1828,6 +1864,12 @@ export default function App() {
           comfyuiUrl={settings?.connections.comfyui_url ?? ""}
           protectedTerms={settings?.prompt?.protected_terms ?? []}
         />
+      ) : activePage === "workflow-library" ? (
+        <WorkflowManager />
+      ) : activePage === "models" ? (
+        <ModelManager />
+      ) : activePage === "injection" ? (
+        <InjectionDocs />
       ) : activePage === "writing" ? (
         <WritingAssistant />
       ) : activePage === "vision" ? (

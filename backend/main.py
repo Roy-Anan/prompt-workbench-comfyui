@@ -33,6 +33,7 @@ import generation_history
 import history_sync
 import llm_history
 import lora_metadata
+import manage_api
 import model_catalog
 import model_identity
 import profile_source
@@ -427,6 +428,9 @@ app.include_router(workflow_router)
 app.include_router(system_router)
 app.include_router(asset_router)
 app.include_router(vision_api.router)
+app.include_router(manage_api.workflow_library_router)
+app.include_router(manage_api.model_docs_router)
+app.include_router(manage_api.injection_router)
 
 app.add_middleware(
     CORSMiddleware,

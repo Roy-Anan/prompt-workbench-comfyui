@@ -1273,7 +1273,7 @@ button:focus-visible { outline: none; box-shadow: var(--w-ring); }
 /* 标题与说明文字的字重节奏 */
 .w-brand-title { font-size: 17px; font-weight: 700; letter-spacing: -0.012em; }
 .w-sidebar .w-brand-title { font-size: 15px; line-height: 1.45; }
-.w-topbar-title { font-size: 15px; font-weight: 600; letter-spacing: 0; color: var(--w-text); }
+.w-topbar-title { font-size: 15px; font-weight: 600; letter-spacing: 0; color: var(--w-text); white-space: nowrap; flex-shrink: 0; }
 .w-brand-sub { color: var(--w-text-3); }
 .section-heading p { line-height: 1.65; color: var(--w-text-2); }
 .w-page-head h1,
