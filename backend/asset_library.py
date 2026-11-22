@@ -21,7 +21,9 @@ coupling.
 from __future__ import annotations
 
 import base64
+import re
 import secrets
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,31 +219,85 @@ def create_group(connection: sqlite3.Connection, name: str) -> dict[str, Any]:
     return {"id": int(cursor.lastrowid), "name": name, "is_default": False, "count": 0}
 
 
-def rename_group(connection: sqlite3.Connection, group_id: int, name: str) -> None:
+def rename_group(
+    connection: sqlite3.Connection,
+    group_id: int,
+    name: str,
+    assets_dir: Path | None = None,
+) -> None:
     name = _normalize_name(name)
     if not name:
         raise ValueError("分组名称不能为空")
-    row = connection.execute("SELECT is_default FROM asset_group WHERE id = ?", (group_id,)).fetchone()
+    row = connection.execute("SELECT name, is_default FROM asset_group WHERE id = ?", (group_id,)).fetchone()
     if row is None:
         raise LookupError("分组不存在")
     if bool(row["is_default"]):
         raise ValueError("默认分组不可重命名")
+    old_name = row["name"]
     try:
         connection.execute(
             "UPDATE asset_group SET name = ? WHERE id = ?", (name, group_id)
         )
     except sqlite3.IntegrityError as exc:
         raise ValueError("分组名称已存在") from exc
+
+    if assets_dir is not None and old_name != name:
+        old_folder = f"{group_id}-{_safe_folder(old_name)}"
+        new_folder = f"{group_id}-{_safe_folder(name)}"
+        if old_folder != new_folder:
+            # Rewrite stored relative paths before touching the directory.
+            items = connection.execute(
+                "SELECT id, storage_rel FROM asset_item WHERE group_id = ? AND kind = 'copy'",
+                (group_id,),
+            ).fetchall()
+            for row in items:
+                rel = row["storage_rel"] or ""
+                if rel.startswith(f"{old_folder}/"):
+                    new_rel = f"{new_folder}/{rel.split('/', 1)[1]}"
+                    connection.execute(
+                        "UPDATE asset_item SET storage_rel = ? WHERE id = ?",
+                        (new_rel, row["id"]),
+                    )
+            old_dir = (assets_dir / "copies" / old_folder).resolve()
+            new_dir = (assets_dir / "copies" / new_folder).resolve()
+            try:
+                old_dir.relative_to((assets_dir / "copies").resolve())
+                new_dir.relative_to((assets_dir / "copies").resolve())
+            except ValueError:
+                old_dir = new_dir = None
+            if old_dir is not None and old_dir.is_dir() and not new_dir.exists():
+                new_dir.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old_dir), str(new_dir))
     connection.commit()
 
 
-def delete_group(connection: sqlite3.Connection, group_id: int) -> None:
+def delete_group(
+    connection: sqlite3.Connection,
+    group_id: int,
+    assets_dir: Path | None = None,
+) -> None:
     row = connection.execute("SELECT is_default FROM asset_group WHERE id = ?", (group_id,)).fetchone()
     if row is None:
         raise LookupError("分组不存在")
     if bool(row["is_default"]):
         raise ValueError("默认分组不可删除")
     default_id = _default_group_id(connection)
+
+    if assets_dir is not None:
+        members = connection.execute(
+            "SELECT id, kind, storage_rel, group_id FROM asset_item WHERE group_id = ?",
+            (group_id,),
+        ).fetchall()
+        for member in members:
+            if member["kind"] == "copy":
+                record = {
+                    "id": member["id"],
+                    "kind": member["kind"],
+                    "storage_rel": member["storage_rel"],
+                    "group_id": member["group_id"],
+                }
+                _move_copy_to_group(connection, assets_dir, record, default_id)
+
     connection.execute(
         "UPDATE asset_item SET group_id = ?, updated_at = ? WHERE group_id = ?",
         (default_id, _now(), group_id),
@@ -292,6 +348,74 @@ def _unique_copy_name(copies_dir: Path, ext: str) -> str:
     raise OSError("无法生成唯一的素材文件名")
 
 
+def _safe_folder(name: str) -> str:
+    """Windows-safe folder stem for a group display name."""
+    text = re.sub(r'[\\/:*?"<>|\s]+', "_", (name or "").strip()).strip("_")
+    return text or "group"
+
+
+def _group_folder(connection: sqlite3.Connection, group_id: int | None) -> str:
+    """Physical subfolder under ``copies/`` for one group.
+
+    The default group keeps a stable ``_default`` folder; other groups get an
+    id-prefixed slug so two similar names cannot collide on disk.
+    """
+    if group_id is None:
+        return "_default"
+    row = connection.execute(
+        "SELECT name, is_default FROM asset_group WHERE id = ?", (group_id,)
+    ).fetchone()
+    if row is None or bool(row["is_default"]):
+        return "_default"
+    return f"{group_id}-{_safe_folder(row['name'])}"
+
+
+def _copy_path(assets_dir: Path, storage_rel: str) -> Path | None:
+    copies_dir = (assets_dir / "copies").resolve()
+    target = (copies_dir / storage_rel).resolve()
+    try:
+        target.relative_to(copies_dir)
+    except ValueError:
+        return None
+    return target
+
+
+def _move_copy_to_group(
+    connection: sqlite3.Connection,
+    assets_dir: Path,
+    record: dict[str, Any],
+    new_group_id: int,
+) -> None:
+    """Move a managed copy into the physical folder of its new group."""
+    new_folder = _group_folder(connection, new_group_id)
+    storage_rel = record.get("storage_rel") or ""
+    src = _copy_path(assets_dir, storage_rel) if storage_rel else None
+
+    if src is not None and src.is_file():
+        group_dir = assets_dir / "copies" / new_folder
+        group_dir.mkdir(parents=True, exist_ok=True)
+        dest_name = _unique_copy_name(group_dir, src.suffix.lower())
+        dest = group_dir / dest_name
+        shutil.move(str(src), str(dest))
+        new_rel = f"{new_folder}/{dest_name}"
+        # Best-effort cleanup of a now-empty old group folder.
+        old_dir = src.parent
+        try:
+            old_dir.rmdir()
+        except OSError:
+            pass
+    else:
+        # Source already missing: keep the basename under the new folder so the
+        # record still resolves as missing rather than escaping the root.
+        basename = storage_rel.split("/")[-1]
+        new_rel = f"{new_folder}/{basename}" if basename else ""
+
+    connection.execute(
+        "UPDATE asset_item SET storage_rel = ? WHERE id = ?",
+        (new_rel, record["id"]),
+    )
+
+
 def import_copies(
     connection: sqlite3.Connection,
     assets_dir: Path,
@@ -308,7 +432,9 @@ def import_copies(
     target_group = _group_id_or_default(connection, group_id)
     tag_ids = _resolve_tags(connection, _normalize_tag_names(tag_names))
     copies_dir = assets_dir / "copies"
-    copies_dir.mkdir(parents=True, exist_ok=True)
+    group_folder = _group_folder(connection, target_group)
+    group_dir = copies_dir / group_folder
+    group_dir.mkdir(parents=True, exist_ok=True)
 
     created: list[dict[str, Any]] = []
     for entry in files:
@@ -323,8 +449,9 @@ def import_copies(
         if not payload:
             raise ValueError(f"图片内容为空：{original_name}")
 
-        stored_name = _unique_copy_name(copies_dir, suffix)
-        (copies_dir / stored_name).write_bytes(payload)
+        stored_name = _unique_copy_name(group_dir, suffix)
+        (group_dir / stored_name).write_bytes(payload)
+        storage_rel = f"{group_folder}/{stored_name}"
 
         now = _now()
         display_name = original_name or stored_name
@@ -336,7 +463,7 @@ def import_copies(
             """,
             (
                 display_name,
-                stored_name,
+                storage_rel,
                 original_name,
                 target_group,
                 len(payload),
@@ -409,14 +536,10 @@ def import_references(
 
 def _record_exists(record: dict[str, Any], assets_dir: Path | None) -> bool:
     if record["kind"] == "copy":
-        if not record["storage_rel"]:
+        if not record["storage_rel"] or assets_dir is None:
             return False
-        path = (assets_dir / "copies" / record["storage_rel"]).resolve()
-        try:
-            path.relative_to((assets_dir / "copies").resolve())
-        except ValueError:
-            return False
-        return path.is_file()
+        path = _copy_path(assets_dir, record["storage_rel"])
+        return path is not None and path.is_file()
     source = record.get("source_path") or ""
     if not source:
         return False
@@ -570,6 +693,12 @@ def update_item(
                            (cleaned, _now(), asset_id))
     if group_id is not None:
         resolved = _group_id_or_default(connection, group_id)
+        if (
+            existing["kind"] == "copy"
+            and existing["group_id"] != resolved
+            and assets_dir is not None
+        ):
+            _move_copy_to_group(connection, assets_dir, existing, resolved)
         connection.execute("UPDATE asset_item SET group_id = ?, updated_at = ? WHERE id = ?",
                            (resolved, _now(), asset_id))
     if note is not None:
@@ -595,14 +724,9 @@ def delete_item(
 
     # Reference records never remove the original file, regardless of the flag.
     if record["kind"] == "copy" and delete_copy and record["storage_rel"]:
-        copies_dir = (assets_dir / "copies").resolve()
-        target = (copies_dir / record["storage_rel"]).resolve()
-        try:
-            target.relative_to(copies_dir)
+        target = _copy_path(assets_dir, record["storage_rel"])
+        if target is not None:
             target.unlink(missing_ok=True)
-        except ValueError:
-            # Path escaped the copies directory; never delete outside it.
-            pass
 
     connection.execute("DELETE FROM asset_item_tag WHERE asset_id = ?", (asset_id,))
     connection.execute("DELETE FROM asset_item WHERE id = ?", (asset_id,))
@@ -631,11 +755,8 @@ def resolve_image_path(
     if record["kind"] == "copy":
         if not record["storage_rel"]:
             return None
-        copies_dir = (assets_dir / "copies").resolve()
-        target = (copies_dir / record["storage_rel"]).resolve()
-        try:
-            target.relative_to(copies_dir)
-        except ValueError:
+        target = _copy_path(assets_dir, record["storage_rel"])
+        if target is None:
             return None
         if target.is_file() and target.suffix.lower() in IMAGE_SUFFIXES:
             return target

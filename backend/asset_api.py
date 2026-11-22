@@ -112,7 +112,7 @@ def create_group(payload: GroupCreate):
 def rename_group(group_id: int, payload: GroupRename):
     try:
         with _connect() as connection:
-            asset_library.rename_group(connection, group_id, payload.name)
+            asset_library.rename_group(connection, group_id, payload.name, _assets_dir())
         return {"ok": True}
     except (ValueError, LookupError) as exc:
         raise _fail(exc) from exc
@@ -122,7 +122,7 @@ def rename_group(group_id: int, payload: GroupRename):
 def delete_group(group_id: int):
     try:
         with _connect() as connection:
-            asset_library.delete_group(connection, group_id)
+            asset_library.delete_group(connection, group_id, _assets_dir())
         return {"ok": True}
     except (ValueError, LookupError) as exc:
         raise _fail(exc) from exc

@@ -53,11 +53,12 @@ def test_import_copies_writes_unique_files_and_records(tmp_path):
     assert item["tags"] == ["人物", "参考"]
     assert item["group_name"] == "未分组"
 
-    copies = list((assets / "copies").iterdir())
-    assert len(copies) == 1
-    assert copies[0].suffix == ".png"
+    copies_dir = assets / "copies"
+    copy_path = copies_dir / item["storage_rel"]
+    assert copy_path.is_file()
+    assert copy_path.suffix == ".png"
     # Stored name is a unique token, not the original display name.
-    assert copies[0].name != "a.png"
+    assert copy_path.name != "a.png"
     conn.close()
 
 
@@ -230,7 +231,7 @@ def test_delete_copy_keeps_or_removes_managed_copy(tmp_path):
     )
     item_id = created[0]["id"]
     copies_dir = assets / "copies"
-    copy_file = next(copies_dir.iterdir())
+    copy_file = copies_dir / created[0]["storage_rel"]
 
     # First delete without removing the copy: record gone, managed file kept.
     asset_library.delete_item(conn, assets, item_id, delete_copy=False)
@@ -254,4 +255,119 @@ def test_missing_reference_marked_not_exists(tmp_path):
     item = asset_library.get_item(conn, created[0]["id"], tmp_path / "assets")
     assert item["exists"] is False
     assert asset_library.resolve_image_path(conn, tmp_path / "assets", item["id"]) is None
+    conn.close()
+
+
+def test_copy_imported_into_group_subfolder(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    group = asset_library.create_group(conn, "角色 卡")
+    created = asset_library.import_copies(
+        conn,
+        assets,
+        [{"name": "a.png", "data": _b64(_png_bytes())}],
+        group_id=group["id"],
+    )
+    item = created[0]
+    rel = Path(item["storage_rel"])
+    # Folder carries the group id and a cleaned slug; file keeps the token name.
+    assert rel.parent.parts[0].startswith(f"{group['id']}-")
+    assert " " not in rel.parent.name
+    copy_path = assets / "copies" / rel
+    assert copy_path.is_file()
+    assert copy_path.read_bytes() == _png_bytes()
+    conn.close()
+
+
+def test_regroup_copy_moves_file_between_folders(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    group = asset_library.create_group(conn, "A组")
+    created = asset_library.import_copies(
+        conn,
+        assets,
+        [{"name": "a.png", "data": _b64(_png_bytes())}],
+        group_id=group["id"],
+    )
+    item_id = created[0]["id"]
+    old_path = assets / "copies" / created[0]["storage_rel"]
+    assert old_path.is_file()
+
+    default = next(g for g in asset_library.list_groups(conn) if g["is_default"])
+    updated = asset_library.update_item(
+        conn, item_id, assets, group_id=default["id"]
+    )
+    new_path = assets / "copies" / updated["storage_rel"]
+    assert not old_path.exists()
+    assert new_path.is_file()
+    assert new_path.read_bytes() == _png_bytes()
+    assert updated["group_name"] == "未分组"
+    conn.close()
+
+
+def test_legacy_flat_copy_filename_still_resolves(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    copies_dir = assets / "copies"
+    copies_dir.mkdir(parents=True, exist_ok=True)
+    legacy = copies_dir / "legacyabc123.png"
+    legacy.write_bytes(_png_bytes())
+    now = asset_library._now()
+    default_id = next(g["id"] for g in asset_library.list_groups(conn) if g["is_default"])
+    conn.execute(
+        "INSERT INTO asset_item(name, kind, storage_rel, group_id, created_at, updated_at) "
+        "VALUES (?, 'copy', ?, ?, ?, ?)",
+        ("legacy.png", legacy.name, default_id, now, now),
+    )
+    conn.commit()
+    item = asset_library.list_items(conn, assets)[0]
+    assert item["exists"] is True
+    resolved = asset_library.resolve_image_path(conn, assets, item["id"])
+    assert resolved == legacy.resolve()
+    conn.close()
+
+
+def test_rename_group_renames_physical_folder(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    group = asset_library.create_group(conn, "旧名")
+    created = asset_library.import_copies(
+        conn,
+        assets,
+        [{"name": "a.png", "data": _b64(_png_bytes())}],
+        group_id=group["id"],
+    )
+    old_rel = created[0]["storage_rel"]
+    old_dir = (assets / "copies" / old_rel).parent
+    assert old_dir.is_dir()
+
+    asset_library.rename_group(conn, group["id"], "新名", assets)
+    item = asset_library.get_item(conn, created[0]["id"], assets)
+    new_dir = (assets / "copies" / item["storage_rel"]).parent
+    assert new_dir.is_dir()
+    assert not old_dir.exists()
+    assert (new_dir / Path(old_rel).name).is_file()
+    conn.close()
+
+
+def test_delete_group_moves_copies_to_default_folder(tmp_path):
+    conn = _db(tmp_path)
+    assets = tmp_path / "assets"
+    group = asset_library.create_group(conn, "临时组")
+    created = asset_library.import_copies(
+        conn,
+        assets,
+        [{"name": "a.png", "data": _b64(_png_bytes())}],
+        group_id=group["id"],
+    )
+    old_path = assets / "copies" / created[0]["storage_rel"]
+    assert old_path.is_file()
+
+    asset_library.delete_group(conn, group["id"], assets)
+    item = asset_library.get_item(conn, created[0]["id"], assets)
+    default = next(g for g in asset_library.list_groups(conn) if g["is_default"])
+    assert item["group_id"] == default["id"]
+    new_path = assets / "copies" / item["storage_rel"]
+    assert new_path.is_file()
+    assert not old_path.exists()
     conn.close()
