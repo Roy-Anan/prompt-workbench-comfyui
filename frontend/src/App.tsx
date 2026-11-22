@@ -1741,6 +1741,20 @@ export default function App() {
             </div>
           )}
           <div
+            className={`w-nav-item ${activePage === "writing" ? "active" : ""}`}
+            onClick={() => switchPage("writing")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m12 20 7-7 3 3-7 7-3-3ZM14.5 5.5l4 4L7 21l-4 1 1-4L14.5 5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
+            写作助手
+          </div>
+          <div
+            className={`w-nav-item ${activePage === "vision" ? "active" : ""}`}
+            onClick={() => switchPage("vision")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="m21 15-4.5-4.5L6 21" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
+            图片识别
+          </div>
+          <div
             className={`w-nav-item ${activePage === "workflow-library" ? "active" : ""}`}
             onClick={() => switchPage("workflow-library")}
           >
@@ -1762,27 +1776,6 @@ export default function App() {
             注入文本
           </div>
           <div
-            className={`w-nav-item ${activePage === "writing" ? "active" : ""}`}
-            onClick={() => switchPage("writing")}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m12 20 7-7 3 3-7 7-3-3ZM14.5 5.5l4 4L7 21l-4 1 1-4L14.5 5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
-            写作助手
-          </div>
-          <div
-            className={`w-nav-item ${activePage === "vision" ? "active" : ""}`}
-            onClick={() => switchPage("vision")}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="m21 15-4.5-4.5L6 21" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
-            图片识别
-          </div>
-          <div
-            className={`w-nav-item ${activePage === "history" ? "active" : ""}`}
-            onClick={() => switchPage("history")}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-4.5-4.5L6 21" stroke="currentColor" stroke-width="2" /></svg>
-            生成历史
-          </div>
-          <div
             className={`w-nav-item ${activePage === "assets" ? "active" : ""}`}
             onClick={() => switchPage("assets")}
           >
@@ -1795,6 +1788,13 @@ export default function App() {
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 3.5 7v10L12 21.5 20.5 17V7L12 2.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /><path d="M12 12 3.5 7M12 12l8.5-5M12 12v9.5" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /></svg>
             LoRA 资料
+          </div>
+          <div
+            className={`w-nav-item ${activePage === "history" ? "active" : ""}`}
+            onClick={() => switchPage("history")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-4.5-4.5L6 21" stroke="currentColor" stroke-width="2" /></svg>
+            生成历史
           </div>
           <div
             className={`w-nav-item ${activePage === "settings" ? "active" : ""}`}
