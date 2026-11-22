@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 
 APP_NAME = "ComfyUI-Prompt-Workbench"
@@ -21,6 +21,11 @@ MAX_CANDIDATE_CHARS = 200_000
 # drift into multi-thousand-token explanations. Cap generated tokens as a
 # safety net unless the caller explicitly passes its own ``num_predict``.
 MAX_PREDICT_TOKENS = 640
+# Ollama otherwise starts the model with a 4096-token context window; the
+# assembled candidate prompt (existing positive/negative prompts + rule
+# layers) can exceed that and comes back as a 400. 8192 leaves headroom for
+# an 8B-class local model on this 8GB card; the UI/API can still override it.
+DEFAULT_NUM_CTX = 8192
 
 
 def chat(
@@ -56,6 +61,7 @@ def chat(
     }
     opts = dict(options or {})
     opts.setdefault("num_predict", MAX_PREDICT_TOKENS)
+    opts.setdefault("num_ctx", DEFAULT_NUM_CTX)
     payload["options"] = opts
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = UrlRequest(target, data=body, method="POST")
@@ -87,6 +93,21 @@ def chat(
             "content": content.strip(),
             "model": model,
             "error": None,
+        }
+    except HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace").strip()
+        except OSError:
+            body = ""
+        detail = f"HTTP {exc.code}: {exc.reason}"
+        if body:
+            detail += f" | {body[:300]}"
+        return {
+            "ok": False,
+            "content": None,
+            "model": model,
+            "error": detail,
         }
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         return {

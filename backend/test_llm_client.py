@@ -55,3 +55,25 @@ def test_chat_respects_explicit_num_predict(monkeypatch):
     )
 
     assert captured["body"]["options"]["num_predict"] == 128
+
+
+def test_chat_injects_default_num_ctx(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(llm_client, "urlopen", _capture_urlopen(captured))
+
+    llm_client.chat("http://127.0.0.1:11434", "m", [{"role": "user", "content": "x"}])
+
+    assert captured["body"]["options"]["num_ctx"] == llm_client.DEFAULT_NUM_CTX
+
+
+def test_chat_respects_explicit_num_ctx(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(llm_client, "urlopen", _capture_urlopen(captured))
+
+    llm_client.chat(
+        "http://127.0.0.1:11434", "m",
+        [{"role": "user", "content": "x"}],
+        options={"num_ctx": 16384},
+    )
+
+    assert captured["body"]["options"]["num_ctx"] == 16384
