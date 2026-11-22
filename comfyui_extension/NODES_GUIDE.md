@@ -82,7 +82,7 @@
 | `model` | 必填。下拉选择真实的本地 Ollama 模型（如 `qwen3:latest`）；扩展会记住上次的选择 |
 | `persona` | 人设下拉：`none` 表示不注入身份系统提示词（裸模型），其余选 `personas/prompt/`、`personas/writing/` 目录内的人设 txt（文件名即选项名，如 `提示词助手` / `写作助手`） |
 | `prompt_profile` | 模型提示词规则下拉：`auto` 走默认规则，`none` 跳过规则层，其余选 `models/` 目录内的规则套；仅提示词身份生效 |
-| `mode` | 创作模式（下拉固定枚举）：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `continue` 续写 / `fresh` 空白直出 / `bilingual` 中英对照 / `negative` 负向补全 / `none` 无模式指令 |
+| `mode` | 创作模式下拉，选项来自后端 `prompt_profiles/modes/` 目录（文件名即选项名，如 `起草` / `润色` / `精简` / `续写` / `空白直出` / `中英对照` / `负向词`）；留空走后端默认起草 |
 | `task` | 这次想让它干什么（一句话要求，可留空） |
 | `backend_url` / `token` | 同前，一般留空 |
 | `genre` / `style` | 写作类题材 / 文风下拉，选对应套件；仅写作身份有意义，留空（`不指定`）表示不叠加该层 |
@@ -92,8 +92,8 @@
 ### 输出项
 
 - `positive_text`：带头信息（模式、模型、身份、命中的 Profile / 题材 / 文风）+ 生成的候选；写作 / 裸模型结果也走这一口。**给人看的**。
-- `negative_text`：`negative` 负向补全模式的结果（带同样头信息）；其余模式留空。
-- `clean_positive` / `clean_negative`：**纯净正文**，不带任何头信息；哪个口有值由 `mode` 决定（`negative` 走 `clean_negative`，其余走 `clean_positive`）。可直接接 CLIPTextEncode，或复制回工作台做安全写入，不会被模式/模型等说明文字污染。
+- `negative_text`：负向词模式（后端 `mode_negative_output` 标志）的结果（带同样头信息）；其余模式留空。
+- `clean_positive` / `clean_negative`：**纯净正文**，不带任何头信息；哪个口有值由模式的负向输出标志决定（负向词走 `clean_negative`，其余走 `clean_positive`）。可直接接 CLIPTextEncode，或复制回工作台做安全写入，不会被模式/模型等说明文字污染。
 - `raw_json`：后端原始返回。
 
 > 提示：要出图或回写，用 `clean_positive` / `clean_negative`；要当场核对"这是谁、用哪套规则生成的"，看 `positive_text` / `negative_text`。

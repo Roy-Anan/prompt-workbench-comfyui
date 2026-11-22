@@ -304,7 +304,7 @@ app.registerExtension({
 // --- Node pickers: backend-filled combos on workbench nodes ----------------
 //
 // The candidate node seeds its picker combos with placeholders because the real
-// option lists (local Ollama models, personas, prompt profiles, genres, styles)
+// option lists (local Ollama models, personas, prompt profiles, genres, styles, modes)
 // live on the workbench backend and cannot be known at node-definition time.
 // This side script reads those lists through the same read-only proxy, replaces
 // the placeholder combo options with plain value strings, and remembers the
@@ -322,6 +322,7 @@ const PICKER_SOURCES = {
   persona: { endpoint: "personas", storage: "workbench.lastPersona" },
   genre: { endpoint: "genres", storage: "workbench.lastGenre" },
   style: { endpoint: "styles", storage: "workbench.lastStyle" },
+  mode: { endpoint: "modes", storage: "workbench.lastMode" },
 };
 
 const pickerCache = {};
@@ -361,6 +362,7 @@ function valuesFor(widgetName, items) {
   if (widgetName === "persona") return ["none", ...ids];
   if (widgetName === "prompt_profile") return ["auto", "none", ...ids];
   if (widgetName === "genre" || widgetName === "style") return ["", ...ids];
+  if (widgetName === "mode") return ["", ...ids];
   return ids;
 }
 

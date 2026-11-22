@@ -375,6 +375,9 @@ def test_candidate_node_model_is_combo():
     # Combo seeded with an empty placeholder; the extension JS fills the real
     # Ollama models and VALIDATE_INPUTS opts the field out of the enum check.
     assert cls.INPUT_TYPES()["required"]["model"][0] == [""]
+    # Mode list likewise lives on the backend; the combo starts empty and the
+    # JS fills the registered modes through the proxy.
+    assert cls.INPUT_TYPES()["required"]["mode"][0] == [""]
 
 
 def test_candidate_node_profile_combo_defaults_auto():
@@ -397,9 +400,9 @@ def test_candidate_node_pickers_are_combos():
 def test_candidate_node_validate_inputs_accepts_dynamic_pickers():
     ext = _load()
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
-    # VALIDATE_INPUTS opts the backend-filled pickers out of the static combo
-    # enum check while keeping the normal check for the fixed "mode" combo.
-    assert node.VALIDATE_INPUTS("m", "none", "auto", "", "") is True
+    # VALIDATE_INPUTS opts the backend-filled pickers (model, mode, persona,
+    # profile, genre, style) out of the static combo enum check.
+    assert node.VALIDATE_INPUTS("m", "", "none", "auto", "", "") is True
 
 
 def test_candidate_node_exposes_identity_and_layer_slots():
@@ -469,6 +472,31 @@ def test_candidate_node_negative_goes_to_negative_port(monkeypatch):
     node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
     positive, negative, raw, clean_positive, clean_negative = node.generate(
         "m", "negative", "补负向", "", ""
+    )
+    assert positive == ""
+    assert "bad hands" in negative
+    assert clean_positive == ""
+    assert clean_negative == "lowres, bad hands"
+
+
+def test_candidate_node_negative_routes_by_backend_flag(monkeypatch):
+    ext = _load()
+    import backend_client
+
+    # Canonical Chinese mode id: the backend flags the negative output side.
+    monkeypatch.setattr(
+        backend_client,
+        "prompt_candidates",
+        lambda wid, body, base="", tok="": {
+            "model": "m",
+            "mode": "负向词",
+            "mode_negative_output": True,
+            "candidates": ["lowres, bad hands"],
+        },
+    )
+    node = ext.NODE_CLASS_MAPPINGS["WorkbenchPromptCandidate"]()
+    positive, negative, raw, clean_positive, clean_negative = node.generate(
+        "m", "负向词", "补负向", "", ""
     )
     assert positive == ""
     assert "bad hands" in negative

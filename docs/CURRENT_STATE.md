@@ -1,6 +1,6 @@
 # CURRENT_STATE — 项目当前有效状态
 
-- 更新日期：2026-11-21
+- 更新日期：2026-11-22
 - 口径：如实记录，计划中功能不计为已完成；仅代码未验证的项明确标注“未验证”。历史流水账见 `docs/archive/STATE_HISTORY.md`，各模块落地切片与剩余方向以 `docs/ROADMAP.md` 为准。
 
 ## 1. 当前阶段
@@ -29,7 +29,7 @@
 - **身份按页签分割（2026-11-20，R147 修订）**：写作助手页签身份下拉仅列裸模型（`none`）与写作类身份，去掉规则套下拉，题材/文风恒显，模式不含负向词；提示词工作区曾一度固定 `prompt_assistant`、不提供身份下拉，R147 起放开为下拉——只列提示词类身份 + 裸模型（`none`），选择随浏览器记忆，规则套与负向模式保留。
 - **图片识别（工作台内，2026-11-20）**：新增「图片识别」页签，后端 `POST /api/vision/describe` 调本机 Ollama VL 模型描述图片（最多 2 张、单张 ≤6MB，复用 ComfyUI/LLM 互斥闸门）。图片可从素材库挑选（历史只引用 `asset_id`、不存副本），也可本地上传临时图（临时图不进历史、不留图）；识别结果可连同素材引用主动存入图生文历史。后端按 `/api/show` 的投影器（`projector_info`）判定真实视觉能力，未挂投影器的模型不进入下拉并给出明确提示。**已真机跑通识别**：由同源 Qwen3-VL-8B-Instruct 视觉投影器（mmproj Q8_0，ModelScope 官方 GGUF 仓库）与本机 heretic 语言权重组装出新标签 `qwen3-vl:latest`，工作台页签上传图片可返回中文描述；纯文本底模与未挂投影器的 `qwen3:latest` 被精确过滤、不进下拉。
 - **统一生成历史（2026-11-20）**：历史页签聚合三类记录——提示词（沿用 `generation_history`，仅出图任务）、图生文（新表 `vision_history`，素材引用）、写作（新表 `writing_history`，仅主动保存落库）；后端 `GET /api/history/all` 按分项聚合并返回计数，`DELETE /api/history/{kind}/{id}` 彻底删除（不做回收站，不联动草稿/素材原图/ComfyUI 原图）。三类各一张表、同一 SQLite 库，随整库备份自动纳入。
-- **画布节点动态字段改为自由文本（R143，2026-11-21）**：候选/规则上下文节点上的 `workflow_id`、`model`、`persona`、`prompt_profile`、`genre`、`style` 原为 combo，真实选项来自工作台后端、Python 节点静态占位列表过不了 ComfyUI 枚举校验，提交时报 `Value not in list`；现改为 STRING 自由文本，后端不做枚举校验，扩展前端脚本只拉取列表用于回填合法值并记忆上次选择，旧工作流里残留的 `标签,值` 复合串会被自动替换。固定枚举 `mode`/`source`/`level` 仍保留下拉。工作台网页端的各类下拉不受影响。
+- **画布节点动态字段改为自由文本（R143，2026-11-21）**：候选/规则上下文节点上的 `workflow_id`、`model`、`persona`、`prompt_profile`、`genre`、`style` 原为 combo，真实选项来自工作台后端、Python 节点静态占位列表过不了 ComfyUI 枚举校验，提交时报 `Value not in list`；现改为 STRING 自由文本，后端不做枚举校验，扩展前端脚本只拉取列表用于回填合法值并记忆上次选择，旧工作流里残留的 `标签,值` 复合串会被自动替换。`source`/`level` 等固定枚举仍保留下拉。工作台网页端的各类下拉不受影响。
 - **候选节点拆纯净正文输出口（R144，2026-11-21）**：`WorkbenchPromptCandidate` 在保留 `positive_text`/`negative_text`（带模式/模型/身份/Profile/题材/文风头信息，供人核对来源）基础上，新增 `clean_positive`/`clean_negative` 两路纯净正文输出——只含候选正文、无头信息，错误或空结果时为空串，可直接接 CLIPTextEncode，或复制回工作台做安全写入而不污染正文。输出口由 3 个扩到 5 个（向后兼容，旧接线不受影响）；扩展测试同步断言。
 - **候选节点三段点击选择、完全去工作流（R145，2026-11-21）**：`WorkbenchPromptCandidate` 删除 `workflow_id` 输入与一切工作流规则联动，改为节点内三段点击选择——真实本地 Ollama `model`、LLM `persona` 人设、`prompt_profile` 模型提示词规则（`genre`/`style` 写作类可选层保留）。动态字段改回 combo 下拉，节点用 `VALIDATE_INPUTS` 把后端填充的 picker 字段排除出 ComfyUI 静态枚举校验（从根上解决此前 combo 提交报 `Value not in list` 的矛盾），扩展前端用纯 value 字符串填充下拉并记忆上次选择。生成始终走 standalone 候选路由，`clean_positive`/`clean_negative` 直接接 CLIPTextEncode 即完成写入。
 - **规则上下文节点同步去工作流依赖（R146，2026-11-21）**：`WorkbenchRuleContext` 删除 `source`（`workflow`/`rules` 切换）与 `workflow_id` 输入，不再按工作流拉取已解析规则上下文，只保留按层级 `level`（checkpoint / architecture / global）+ 可选 `scope_key` 浏览全局规则清单；画布显示名改为「工作台规则清单」。扩展前端 picker 同步移除 `WorkbenchRuleContext` 与 `workflow_id` 源，只给候选节点填充动态下拉；规则仍只读、不写回，代理白名单不变。
@@ -42,6 +42,7 @@
 - **创作模式新增参照模板（R154，2026-11-22）**：`prompt_profiles/templates/CANDIDATE_MODE_TEMPLATE.md` 记录模式实现口径（一句中文指令进 user 消息末尾、不进 system 层）与新增模式的四处联动位置（后端 `CANDIDATE_MODES`、工作台与写作两个前端下拉、扩展节点 `MODES`/`MODE_LABELS`），并附可照抄片段、命名约定与自测项。
 - **新增续写 / 空白直出模式（R156，2026-11-22）**：`continue`（续写）在现有内容基础上向后延展、不推翻已有内容，走常规现有内容段；`fresh`（空白直出）按规则与任务要求从零生成，后端 `_user_message` 跳过现有正/负向 Prompt 段（必保术语 / 锁定片段仍保留），不进负向出口分流。两处前端下拉与扩展节点 `MODES`/`MODE_LABELS` 同步加项，模板清单表与 `NODES_GUIDE.md` 枚举文字一并更新；后端补 fresh 跳过现有内容、continue 保留现有内容两条单测。
 - **题材 / 文风改为扁平文件名即选项名（R157，2026-11-22）**：`genres/`、`styles/` 与人设口径对齐——目录下扁平 `.txt`，文件名 stem 同时作为 id 与下拉显示名，允许中文，不再解析正文头部「名称」行，也不再要求小写 slug；仅跳过 `_` / `.` 开头与含路径非法字符的文件，空正文标 `exists=False`。存量五套 slug 文件按头部名称迁移为中文名（武侠 / 言情；古风白描 / 网文快节奏 / 细腻心理），两份 `_TEMPLATE.txt` 改写为新口径；缓存键改为按文件粒度失效，`list_genres`/`list_styles` 补 `force` 参数。测试补中文文件名扫描、隐藏/空文件跳过与按名取正文断言。
+- **创作模式改为目录遍历文件注册表（R158，2026-11-22）**：`modes/` 目录下扁平 `.txt`，文件名 stem 即 id 即下拉显示名（允许中文），正文一句祈使指令；取代原先前后端 + 扩展节点四处写死的英文 slug 枚举。后端 `prompt_personas.py` 加 `_scan_modes` / `list_modes` / `resolve_mode` / `get_mode`，缓存键纳入 modes 目录；`GET /api/modes` 投影；请求校验走注册表，未知模式报 `unknown mode`。两个特殊行为保留代码标志：`空白直出`（`skip_existing`，不携带现有 Prompt）、`负向词`（`negative_output`，走负向输出口，写作页剔除）；响应带 `mode_negative_output`。七个内置模式迁入 `modes/`（起草 / 润色 / 精简 / 续写 / 空白直出 / 中英对照 / 负向词），旧英文 slug 经别名表兼容历史记录、浏览器记忆与已保存 ComfyUI 图。工作台与写作助手前端改拉 `/api/modes` 动态渲染；扩展节点 `mode` combo 改静态空占位并纳入 `VALIDATE_INPUTS` 放行，代理白名单加 `modes`，面板 JS 加 mode 选择器源；负向分流改读后端标志（旧 `negative` slug 兜底）。R154 模板「固定枚举四处联动」口径已反转为文件注册表。
 - **规则套改为目录遍历 + 目录内可选 meta.json（R149，2026-11-21）**：`models/<id>/` 遍历列出规则套，`rules.txt` 必选、`meta.json` 可选；显示名 / 架构 / 文件名可从正文头部 `Display Name` / `Base Architecture` / `Exact Checkpoint Filename` 解析兜底，meta 同名字段优先；退役根 `manifest.json`，13 套存量迁移为目录内 meta.json。停用 / 版本归档 / 回滚 / 删除状态落在目录内 meta 与 `archive/`，staging 发布合并 meta；内容哈希读取时实时计算，不再手工登记。新增与维护流程见 `prompt_profiles/PROFILES_GUIDE.md`。
 - **已知环境型测试失败（非回归，勿改测试逻辑）**：
   - `test_scripts.py::test_stopper_fallback_no_health_match_does_not_touch`：仓库根残留当前运行实例的 `.workbench-runtime.json` 触发 corrupt 分支。

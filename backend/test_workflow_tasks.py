@@ -880,7 +880,7 @@ def test_candidate_mode_polish_passes_instruction(client, monkeypatch):
         json={"model": "qwen3:latest", "mode": "polish"},
     )
     assert response.status_code == 200
-    assert response.json()["mode"] == "polish"
+    assert response.json()["mode"] == "润色"
     user_message = captured["messages"][-1]["content"]
     assert "润色" in user_message
 
@@ -907,7 +907,8 @@ def test_candidate_mode_negative_passes_instruction(client, monkeypatch):
         json={"model": "qwen3:latest", "mode": "negative"},
     )
     assert response.status_code == 200
-    assert response.json()["mode"] == "negative"
+    assert response.json()["mode"] == "负向词"
+    assert response.json()["mode_negative_output"] is True
     user_message = captured["messages"][-1]["content"]
     assert "负向" in user_message
 

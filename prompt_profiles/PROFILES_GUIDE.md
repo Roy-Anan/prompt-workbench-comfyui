@@ -13,7 +13,7 @@ prompt_profiles/
     meta.json                       # 可选：结构化补充信息（匹配模式、别名、优先级、停用、版本……）
   staging/<id>/                    # 待发布草稿（可选工作区，发布后自动清除）
   archive/<id>/<时间戳>/            # 旧版本归档（回滚用，自动生成）
-  genres/  styles/                  # 写作类题材 / 文风（与规则套无关）
+  genres/  styles/  modes/          # 写作类题材 / 文风；创作模式（均扁平 txt，文件名即选项名）
   templates/                       # 空白骨架模板
 ```
 

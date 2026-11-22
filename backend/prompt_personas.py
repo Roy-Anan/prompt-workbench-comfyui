@@ -33,6 +33,7 @@ import prompt_profiles
 PERSONAS_DIR = "personas"
 GENRES_DIR = "genres"
 STYLES_DIR = "styles"
+MODES_DIR = "modes"
 # Sentinel / explicit empty value: selecting "none" means no identity layer.
 NONE_VALUE = "none"
 
@@ -40,8 +41,37 @@ _KIND_VALUES = {"prompt", "writing"}
 _TYPE_DIRS = _KIND_VALUES
 # Characters forbidden in a layer file stem (path / shell unsafe).
 _PERSONA_INVALID_CHARS = '/\\:*?"<>|'
+
+# Legacy English slug -> canonical Chinese stem, so old history records, saved
+# browser memory and ComfyUI graphs written before modes became file-driven
+# keep resolving to the matching built-in mode.
+MODE_LEGACY_ALIAS: dict[str, str] = {
+    "draft": "起草",
+    "polish": "润色",
+    "trim": "精简",
+    "bilingual": "中英对照",
+    "continue": "续写",
+    "fresh": "空白直出",
+    "negative": "负向词",
+}
+
+# Code-bound behavior flags for special built-in modes, keyed by stem. A plain
+# file mode has neither flag. The wording still comes from the file body; only
+# these two request/output behaviors are kept in code because they cannot be
+# expressed by an instruction sentence alone.
+MODE_FLAGS: dict[str, dict[str, bool]] = {
+    "空白直出": {"skip_existing": True, "negative_output": False},
+    "负向词": {"skip_existing": False, "negative_output": True},
+}
+
 _lock = threading.Lock()
-_cache: dict[str, Any] = {"key": None, "personas": [], "genres": [], "styles": []}
+_cache: dict[str, Any] = {
+    "key": None,
+    "personas": [],
+    "genres": [],
+    "styles": [],
+    "modes": [],
+}
 
 
 def root_dir() -> Path:
@@ -84,6 +114,7 @@ def _cache_key() -> tuple[Any, Any]:
     return _dir_key(root / PERSONAS_DIR), (
         _dir_key(root / GENRES_DIR),
         _dir_key(root / STYLES_DIR),
+        _dir_key(root / MODES_DIR),
     )
 
 
@@ -129,6 +160,36 @@ def get_genre(genre_id: str) -> str:
 def get_style(style_id: str) -> str:
     _ensure_cache()
     return _read_layer_text(STYLES_DIR, style_id)
+
+
+def list_modes(force: bool = False) -> list[dict[str, Any]]:
+    _ensure_cache(force)
+    return list(_cache["modes"])
+
+
+def resolve_mode(value: str | None) -> str:
+    """Normalize a request ``mode`` value to its canonical stem.
+
+    Returns ``""`` for the empty / ``none`` sentinel, the legacy slug mapped
+    to its canonical stem, or the raw stem otherwise. Callers still check the
+    returned value against the registry.
+    """
+    normalized = (value or "").strip()
+    if normalized in ("", NONE_VALUE):
+        return ""
+    return MODE_LEGACY_ALIAS.get(normalized, normalized)
+
+
+def get_mode(mode_id: str | None) -> dict[str, Any] | None:
+    """Return one mode entry plus its instruction text, or None."""
+    canonical = resolve_mode(mode_id)
+    if not canonical:
+        return None
+    _ensure_cache()
+    for entry in _cache["modes"]:
+        if entry.get("id") == canonical:
+            return dict(entry)
+    return None
 
 
 def _read_layer_text(directory: str, layer_id: str) -> str:
@@ -210,6 +271,36 @@ def _scan_personas() -> list[dict[str, Any]]:
     return entries
 
 
+def _scan_modes() -> list[dict[str, Any]]:
+    folder = root_dir() / MODES_DIR
+    entries: list[dict[str, Any]] = []
+    if not folder.is_dir():
+        return entries
+    for path in sorted(folder.iterdir()):
+        if not path.is_file() or path.suffix != ".txt":
+            continue
+        stem = path.stem
+        if not _valid_persona_stem(stem):
+            continue
+        text = ""
+        try:
+            text = _read_text(path)
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        flags = MODE_FLAGS.get(stem, {"skip_existing": False, "negative_output": False})
+        entries.append(
+            {
+                "id": stem,
+                "display_name": stem,
+                "instruction": text.strip(),
+                "exists": bool(text.strip()),
+                "skip_existing": flags["skip_existing"],
+                "negative_output": flags["negative_output"],
+            }
+        )
+    return entries
+
+
 def _ensure_cache(force: bool = False) -> None:
     key = _cache_key()
     with _lock:
@@ -219,3 +310,4 @@ def _ensure_cache(force: bool = False) -> None:
         _cache["personas"] = _scan_personas()
         _cache["genres"] = _scan_text_layer(GENRES_DIR)
         _cache["styles"] = _scan_text_layer(STYLES_DIR)
+        _cache["modes"] = _scan_modes()

@@ -679,11 +679,15 @@ export default function HistoryPanel() {
     return true;
   });
 
+// 旧版英文 slug 回显；新记录直接存中文规范名，未命中时原样显示。
 const WRITING_MODE_LABEL: Record<string, string> = {
   draft: "起草",
   polish: "润色",
   trim: "精简",
   bilingual: "中英对照",
+  continue: "续写",
+  fresh: "空白直出",
+  negative: "负向词",
 };
 
 function assetImageUrl(assetId: number): string {
@@ -767,7 +771,7 @@ function renderWritingRecord(record: WritingRecord) {
     record.persona_name,
     record.genre,
     record.style,
-    record.mode ? WRITING_MODE_LABEL[record.mode] : null,
+    record.mode ? WRITING_MODE_LABEL[record.mode] ?? record.mode : null,
   ].filter(Boolean);
   return (
     <div className="rule-row" key={recordKey(record)}>

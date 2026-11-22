@@ -112,38 +112,6 @@ class PromptWrite(BaseModel):
     negative_text: str | None = None
 
 
-CANDIDATE_MODES: dict[str, dict[str, str]] = {
-    "draft": {
-        "label": "起草补全",
-        "instruction": "请基于上述规则与现有内容补全一份 Prompt 候选；未提供的参数不要臆造。",
-    },
-    "polish": {
-        "label": "润色",
-        "instruction": "请在现有内容基础上润色措辞，保持规则事实与已规定参数不变，不新增未提供的参数；未提供的不要臆造。",
-    },
-    "trim": {
-        "label": "精简",
-        "instruction": "请精简现有 Prompt，去除重复与冗余表述，保留核心主体、构图与已规定参数；未提供的参数不要臆造。",
-    },
-    "bilingual": {
-        "label": "中英对照",
-        "instruction": "请在现有内容基础上给出中英对照版本，保留语义与已规定参数；未提供的参数不要臆造。",
-    },
-    "continue": {
-        "label": "续写",
-        "instruction": "请在现有内容基础上继续延展补充，承接已有主体、设定与方向往下写，不推翻已有内容；未提供的参数不要臆造。",
-    },
-    "fresh": {
-        "label": "空白直出",
-        "instruction": "忽略上面给出的现有 Prompt，仅依据规则与任务要求从零生成一份全新的 Prompt；未提供的参数不要臆造。",
-    },
-    "negative": {
-        "label": "负向补全",
-        "instruction": "请基于现有负向提示词补全/优化负向 Prompt，描述需要排除的负面特征；不要改写正向内容，未提供的参数不要臆造。",
-    },
-}
-
-
 class PromptCandidateRequest(BaseModel):
     model: str = Field(min_length=1, max_length=120)
     task: str | None = Field(default=None, max_length=2000)
@@ -180,10 +148,8 @@ class PromptCandidateRequest(BaseModel):
     @field_validator("mode")
     @classmethod
     def _mode_known(cls, value: str) -> str:
-        normalized = (value or "").strip()
-        if normalized in ("", "none"):
-            return ""
-        if normalized not in CANDIDATE_MODES:
+        normalized = prompt_personas.resolve_mode(value)
+        if normalized and not prompt_personas.get_mode(normalized):
             raise ValueError(f"unknown mode: {normalized}")
         return normalized
 
@@ -380,8 +346,9 @@ def _user_message(
         by_role["negative"].append(negative_in.strip())
 
     lines: list[str] = []
+    mode_entry = prompt_personas.get_mode(mode) if mode else None
     # 空白直出模式不携带现有 Prompt，只按规则与任务要求从零生成。
-    include_existing = mode != "fresh"
+    include_existing = not (mode_entry and mode_entry.get("skip_existing"))
     if include_existing and (by_role["positive"] or by_role["negative"]):
         lines.append("当前工作流现有 Prompt：")
         if by_role["positive"]:
@@ -400,8 +367,8 @@ def _user_message(
             "以下片段必须原样保留，不得改写、删除、翻译或替换："
             + "、".join(locked_fragments)
         )
-    if mode and mode in CANDIDATE_MODES:
-        lines.append(CANDIDATE_MODES[mode]["instruction"])
+    if mode_entry and mode_entry.get("instruction"):
+        lines.append(mode_entry["instruction"])
     return "\n".join(lines)
 @router.get("")
 def list_workflows():
@@ -805,6 +772,10 @@ def _generate_candidate(
     # Writing-class layers (genre / style); harmless when empty.
     genre_text = prompt_personas.get_genre(payload.genre) if payload.genre else ""
     style_text = prompt_personas.get_style(payload.style) if payload.style else ""
+    # Normalize a legacy slug to the canonical Chinese stem so history records
+    # and the response carry the registry id, not the old English alias.
+    canonical_mode = prompt_personas.resolve_mode(payload.mode)
+    mode_entry = prompt_personas.get_mode(canonical_mode) if canonical_mode else None
 
     workflow_rules_text = _rules_system_message(rule_payload) if workflow_id else ""
 
@@ -830,7 +801,7 @@ def _generate_candidate(
             "content": _user_message(
                 working_prompts,
                 payload.task,
-                payload.mode,
+                canonical_mode,
                 _protected_terms(),
                 payload.locked_fragments,
                 payload.positive_in,
@@ -878,7 +849,8 @@ def _generate_candidate(
 
     return {
         "model": result["model"],
-        "mode": payload.mode,
+        "mode": canonical_mode,
+        "mode_negative_output": bool(mode_entry and mode_entry.get("negative_output")),
         "candidates": [cleaned],
         "rule_status": rule_payload["status"],
         "conflicts": rule_payload["conflicts"],

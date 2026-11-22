@@ -20,6 +20,7 @@ def test_proxy_whitelisted_routes_map_to_backend_paths():
     assert proxy.backend_path_for("overview") == "/api/overview"
     assert proxy.backend_path_for("sidebar-summary") == "/api/sidebar/summary"
     assert proxy.backend_path_for("workflows") == "/api/workflows"
+    assert proxy.backend_path_for("modes") == "/api/modes"
 
 
 def test_proxy_rejects_unknown_suffix():

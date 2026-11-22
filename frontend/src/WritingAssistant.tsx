@@ -7,14 +7,22 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "./api";
 
-const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "draft", label: "起草" },
-  { value: "polish", label: "润色" },
-  { value: "trim", label: "精简" },
-  { value: "continue", label: "续写" },
-  { value: "fresh", label: "空白直出" },
-  { value: "bilingual", label: "中英对照" },
-];
+// 旧版英文模式 slug 迁移到新的中文文件名 id。
+const MODE_LEGACY_ALIAS: Record<string, string> = {
+  draft: "起草",
+  polish: "润色",
+  trim: "精简",
+  continue: "续写",
+  fresh: "空白直出",
+  bilingual: "中英对照",
+  negative: "负向词",
+};
+const DEFAULT_MODE = "起草";
+
+function resolveStoredMode(stored: string | null): string {
+  if (!stored) return DEFAULT_MODE;
+  return MODE_LEGACY_ALIAS[stored] ?? stored;
+}
 
 // 旧版英文人设 id 迁移到新的中文文件名 id；提示词类身份串到本页回退裸模型。
 const LEGACY_PERSONA_IDS: Record<string, string> = {
@@ -123,6 +131,13 @@ type Persona = {
 };
 
 type LayerItem = { id: string; display_name: string; exists?: boolean };
+type ModeItem = {
+  id: string;
+  display_name: string;
+  exists?: boolean;
+  skip_existing?: boolean;
+  negative_output?: boolean;
+};
 
 type OllamaModelsResponse = {
   online: boolean;
@@ -133,6 +148,7 @@ type OllamaModelsResponse = {
 
 type PersonasResponse = { items: Persona[] };
 type LayersResponse = { items: LayerItem[] };
+type ModesResponse = { items: ModeItem[] };
 
 export default function WritingAssistant() {
   const [modelsOnline, setModelsOnline] = useState(true);
@@ -167,12 +183,10 @@ export default function WritingAssistant() {
   const [candidateCtx, setCandidateCtx] = useState(() =>
     readStoredParam("writing.ctx"),
   );
-  const [candidateMode, setCandidateMode] = useState(() => {
-    const stored = readStoredParam("writing.mode");
-    return CANDIDATE_MODE_OPTIONS.some((opt) => opt.value === stored)
-      ? stored
-      : "draft";
-  });
+  const [modes, setModes] = useState<ModeItem[]>([]);
+  const [candidateMode, setCandidateMode] = useState(() =>
+    resolveStoredMode(readStoredParam("writing.mode")),
+  );
 
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -181,7 +195,8 @@ export default function WritingAssistant() {
 
   // 本页只列出写作类身份；提示词类助手在工作流工作区。
   const writingPersonas = personas.filter((p) => p.kind !== "prompt");
-  const candidateModeOptions = CANDIDATE_MODE_OPTIONS;
+  // 写作页不提供负向词模式。
+  const candidateModeOptions = modes.filter((m) => !m.negative_output);
 
   async function loadModels() {
     try {
@@ -230,12 +245,35 @@ export default function WritingAssistant() {
     }
   }
 
+  async function loadModes() {
+    try {
+      const result = await apiGet<ModesResponse>("/api/modes");
+      setModes(result.items ?? []);
+    } catch {
+      setModes([]);
+    }
+  }
+
   useEffect(() => {
     void loadModels();
     void loadPersonas();
     void loadGenres();
     void loadStyles();
+    void loadModes();
   }, []);
+
+  // 模式清单就绪后，记忆值若已失效（改名 / 删除 / 旧英文 slug）回退默认起草。
+  useEffect(() => {
+    if (!modes.length) return;
+    const available = modes.filter((m) => !m.negative_output);
+    if (!available.some((m) => m.id === candidateMode)) {
+      const fallback = available.some((m) => m.id === DEFAULT_MODE)
+        ? DEFAULT_MODE
+        : available[0].id;
+      setCandidateMode(fallback);
+      persistParam("writing.mode", fallback);
+    }
+  }, [modes, candidateMode]);
 
   // 人设列表就绪后，记忆值若已失效（改名 / 删除 / 跨类串入）回退裸模型。
   useEffect(() => {
@@ -250,8 +288,9 @@ export default function WritingAssistant() {
     if (!selectedModel) return;
     setBusy(true);
     try {
+      const selectedMode = modes.find((m) => m.id === candidateMode);
       const effectiveMode =
-        candidateMode === "negative" ? "draft" : candidateMode;
+        selectedMode?.negative_output ? DEFAULT_MODE : candidateMode;
       const body: Record<string, unknown> = {
         model: selectedModel,
         task: taskText.trim() || null,
@@ -458,8 +497,8 @@ export default function WritingAssistant() {
                 }}
               >
                 {candidateModeOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                  <option key={opt.id} value={opt.id}>
+                    {opt.display_name}
                   </option>
                 ))}
               </select>
@@ -515,8 +554,7 @@ export default function WritingAssistant() {
           </div>
           {candidates.map((item, index) => {
             const modeLabel =
-              CANDIDATE_MODE_OPTIONS.find((o) => o.value === item.mode)?.label ??
-              item.mode;
+              modes.find((o) => o.id === item.mode)?.display_name ?? item.mode;
             return (
               <div key={index} className="candidate-card">
                 <div className="candidate-card-head">

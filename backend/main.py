@@ -1923,6 +1923,12 @@ def list_styles():
     return {"items": prompt_personas.list_styles()}
 
 
+@app.get("/api/modes")
+def list_modes():
+    """List candidate generation modes registered under the modes folder."""
+    return {"items": prompt_personas.list_modes()}
+
+
 @app.get("/api/prompt-profiles/staging")
 def list_profile_staging():
     """List staged Profile directories awaiting review/publish."""

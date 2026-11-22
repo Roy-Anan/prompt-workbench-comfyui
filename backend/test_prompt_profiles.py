@@ -420,6 +420,36 @@ def test_genres_styles_use_filename_as_id_and_label(tmp_path, monkeypatch):
     assert prompt_personas.get_style("网文快节奏") == "短促有力"
 
 
+def test_modes_use_filename_as_id_with_code_flags_and_alias(tmp_path, monkeypatch):
+    root = _make_root(tmp_path, monkeypatch)
+    _write_layer(root, "modes", "起草", "基于规则与现有内容补全候选。")
+    _write_layer(root, "modes", "空白直出", "忽略现有 Prompt 从零生成。")
+    _write_layer(root, "modes", "负向词", "补全 / 优化负向提示词。")
+    _write_layer(root, "modes", "空模式", "   ")
+    (root / "modes" / "_hidden.txt").write_text("隐藏", encoding="utf-8")
+
+    modes = {e["id"]: e for e in prompt_personas.list_modes(force=True)}
+    assert set(modes) == {"起草", "空白直出", "负向词", "空模式"}
+    assert modes["起草"]["display_name"] == "起草"
+    assert modes["起草"]["instruction"] == "基于规则与现有内容补全候选。"
+    assert modes["空模式"]["exists"] is False
+    # Built-in code-bound behavior flags; plain file modes have neither.
+    assert modes["空白直出"]["skip_existing"] is True
+    assert modes["空白直出"]["negative_output"] is False
+    assert modes["负向词"]["negative_output"] is True
+    assert modes["起草"]["skip_existing"] is False
+    assert modes["起草"]["negative_output"] is False
+
+    # Legacy English slugs resolve to the canonical Chinese stems.
+    assert prompt_personas.resolve_mode("draft") == "起草"
+    assert prompt_personas.resolve_mode("negative") == "负向词"
+    assert prompt_personas.resolve_mode("none") == ""
+    assert prompt_personas.resolve_mode("custom") == "custom"
+    assert prompt_personas.get_mode("draft")["id"] == "起草"
+    assert prompt_personas.get_mode("负向词")["negative_output"] is True
+    assert prompt_personas.get_mode("ghost") is None
+
+
 def _candidate_fake(monkeypatch, captured):
     def fake_chat(url, model, messages, timeout=30.0, options=None):
         captured["messages"] = messages

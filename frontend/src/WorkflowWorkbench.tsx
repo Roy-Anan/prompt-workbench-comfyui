@@ -184,8 +184,16 @@ type Persona = {
   exists?: boolean;
 };
 type LayerItem = { id: string; display_name: string; exists?: boolean };
+type ModeItem = {
+  id: string;
+  display_name: string;
+  exists?: boolean;
+  skip_existing?: boolean;
+  negative_output?: boolean;
+};
 type PersonasResponse = { items: Persona[] };
 type LayersResponse = { items: LayerItem[] };
+type ModesResponse = { items: ModeItem[] };
 type PromptProfile = {
   id: string;
   display_name: string;
@@ -390,15 +398,22 @@ const STATUS_LABEL: Record<string, string> = {
   unknown: "无法判定",
 };
 
-const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "draft", label: "起草" },
-  { value: "polish", label: "润色" },
-  { value: "trim", label: "精简" },
-  { value: "continue", label: "续写" },
-  { value: "fresh", label: "空白直出" },
-  { value: "bilingual", label: "中英对照" },
-  { value: "negative", label: "负向词" },
-];
+// 旧版英文模式 slug 迁移到新的中文文件名 id。
+const MODE_LEGACY_ALIAS: Record<string, string> = {
+  draft: "起草",
+  polish: "润色",
+  trim: "精简",
+  continue: "续写",
+  fresh: "空白直出",
+  bilingual: "中英对照",
+  negative: "负向词",
+};
+const DEFAULT_MODE = "起草";
+
+function resolveStoredMode(stored: string | null): string {
+  if (!stored) return DEFAULT_MODE;
+  return MODE_LEGACY_ALIAS[stored] ?? stored;
+}
 
 // 旧版英文人设 id 迁移到新的中文文件名 id；写作类身份串到本页回退提示词助手。
 const LEGACY_PERSONA_IDS: Record<string, string> = {
@@ -757,12 +772,10 @@ export default function WorkflowWorkbench({
   const [candidateCtx, setCandidateCtx] = useState(() =>
     readStoredParam("workbench.candidateCtx"),
   );
-  const [candidateMode, setCandidateMode] = useState(() => {
-    const stored = readStoredParam("workbench.candidateMode");
-    return CANDIDATE_MODE_OPTIONS.some((opt) => opt.value === stored)
-      ? stored
-      : "draft";
-  });
+  const [modes, setModes] = useState<ModeItem[]>([]);
+  const [candidateMode, setCandidateMode] = useState(() =>
+    resolveStoredMode(readStoredParam("workbench.candidateMode")),
+  );
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [activeCandidate, setActiveCandidate] = useState<number | null>(null);
   const [compareOther, setCompareOther] = useState<number | null>(null);
@@ -778,13 +791,15 @@ export default function WorkflowWorkbench({
   }
 
   function candidateScopeOf(mode: string): CandidateScope {
-    return mode === "negative" ? "negative" : "positive";
+    return modes.find((m) => m.id === mode)?.negative_output
+      ? "negative"
+      : "positive";
   }
   const currentPersona = personas.find((p) => p.id === selectedPersona);
   const personaKind: string = currentPersona?.kind ?? "generic";
   const isWritingIdentity = personaKind === "writing";
-  const candidateModeOptions = CANDIDATE_MODE_OPTIONS.filter(
-    (opt) => !isWritingIdentity || opt.value !== "negative",
+  const candidateModeOptions = modes.filter(
+    (opt) => !isWritingIdentity || !opt.negative_output,
   );
   const [importedPrompt, setImportedPrompt] = useState<PromptImport | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -847,8 +862,20 @@ export default function WorkflowWorkbench({
     void loadPersonas();
     void loadGenres();
     void loadStyles();
+    void loadModes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 模式清单就绪后，记忆值若已失效（改名 / 删除 / 旧英文 slug）回退默认起草。
+  useEffect(() => {
+    if (!modes.length) return;
+    if (!modes.some((m) => m.id === candidateMode)) {
+      const fallback = modes.some((m) => m.id === DEFAULT_MODE)
+        ? DEFAULT_MODE
+        : modes[0].id;
+      setCandidateMode(fallback);
+      persistParam("workbench.candidateMode", fallback);
+    }
+  }, [modes, candidateMode]);
   // 人设列表就绪后，记忆值若已失效（改名 / 删除 / 跨类串入）回退默认提示词助手或裸模型。
   useEffect(() => {
     if (!selectedPersona || selectedPersona === "none") return;
@@ -1120,6 +1147,14 @@ export default function WorkflowWorkbench({
       setStyles([]);
     }
   }
+  async function loadModes() {
+    try {
+      const result = await apiGet<ModesResponse>("/api/modes");
+      setModes(result.items ?? []);
+    } catch {
+      setModes([]);
+    }
+  }
   async function loadModels() {
     try {
       const result = await apiGet<OllamaModelsResponse>("/api/ollama/models");
@@ -1145,8 +1180,11 @@ export default function WorkflowWorkbench({
     try {
       // Writing identities have no negative-prompt mode; fall back to draft if
       // a remembered negative mode is still selected after switching identity.
+      const selectedMode = modes.find((m) => m.id === candidateMode);
       const effectiveMode =
-        isWritingIdentity && candidateMode === "negative" ? "draft" : candidateMode;
+        isWritingIdentity && selectedMode?.negative_output
+          ? DEFAULT_MODE
+          : candidateMode;
       const body: Record<string, unknown> = {
         model: selectedModel,
         task: taskText.trim() || null,
@@ -2654,8 +2692,8 @@ export default function WorkflowWorkbench({
                         }}
                       >
                         {candidateModeOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                          <option key={opt.id} value={opt.id}>
+                            {opt.display_name}
                           </option>
                         ))}
                       </select>
@@ -2709,7 +2747,7 @@ export default function WorkflowWorkbench({
                       </div>
                       {candidates.map((item, index) => {
                         const modeLabel =
-                          CANDIDATE_MODE_OPTIONS.find((o) => o.value === item.mode)?.label ??
+                          modes.find((o) => o.id === item.mode)?.display_name ??
                           item.mode;
                         const active = activeCandidate === index;
                         const comparing = compareOther === index;

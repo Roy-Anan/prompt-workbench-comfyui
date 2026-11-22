@@ -28,8 +28,10 @@ from typing import Any
 
 import backend_client
 
-MODES = ["draft", "polish", "trim", "continue", "fresh", "bilingual", "negative", "none"]
-
+# Legacy English slugs kept only to label old saved graphs; the real mode list
+# lives on the workbench backend (prompt_profiles/modes/*.txt) and is filled
+# into the combo by the extension JS. New canonical ids are Chinese file
+# stems and pass through unchanged.
 MODE_LABELS = {
     "draft": "起草补全",
     "polish": "润色",
@@ -63,7 +65,7 @@ class WorkbenchPromptCandidate:
                 # /api/ollama/models, and VALIDATE_INPUTS opts this field out
                 # of the static enum check below.
                 "model": ([""], {"default": ""}),
-                "mode": (MODES, {"default": "draft"}),
+                "mode": ([""], {"default": ""}),
                 "task": ("STRING", {"default": "", "multiline": True}),
                 "backend_url": ("STRING", {"default": ""}),
             },
@@ -101,7 +103,7 @@ class WorkbenchPromptCandidate:
     CATEGORY = "Workbench/LLM"
 
     @classmethod
-    def VALIDATE_INPUTS(cls, model, persona, prompt_profile, genre, style):
+    def VALIDATE_INPUTS(cls, model, mode, persona, prompt_profile, genre, style):
         """Let the dynamic picker fields accept backend-filled combo values.
 
         The real option lists live on the workbench backend and are filled into
@@ -109,7 +111,7 @@ class WorkbenchPromptCandidate:
         static Python placeholders above can never enumerate them. ComfyUI
         skips its default enum/min/max check for every input named in this
         method's signature, so returning ``True`` keeps the picker fields
-        free-form while the fixed ``mode`` combo still gets its normal check.
+        free-form.
         """
         return True
 
@@ -143,7 +145,10 @@ class WorkbenchPromptCandidate:
         body: dict[str, Any] = {"model": model}
 
         mode_value = _clean(mode)
-        body["mode"] = _NONE if mode_value in ("", _NONE) else mode_value
+        # Empty / "none" omits the slot so the backend falls back to its
+        # default draft mode.
+        if mode_value and mode_value != _NONE:
+            body["mode"] = mode_value
 
         if _clean(task):
             body["task"] = _clean(task)
@@ -200,6 +205,8 @@ class WorkbenchPromptCandidate:
             )
 
         mode_label = MODE_LABELS.get(mode_value, mode_value)
+        if not mode_label:
+            mode_label = "起草"
         header = f"[{mode_label}｜模型 {data.get('model') or model}]"
 
         persona_name = data.get("persona_name")
@@ -222,11 +229,14 @@ class WorkbenchPromptCandidate:
         body_text = candidates[0]
         raw = json.dumps(data, ensure_ascii=False)
         # Negative-mode output goes to the negative ports; everything else to
-        # the positive ports. The *_text ports keep the human-readable header;
-        # the clean_* ports carry only the prompt body, never a header or an
-        # error message, so they are safe to wire into a CLIPTextEncode or copy
-        # back for a workbench safe write.
-        if mode_value == "negative":
+        # the positive ports. The backend flags the mode's output side via
+        # ``mode_negative_output``; the legacy slug ``negative`` is kept as a
+        # fallback for old saved graphs. The *_text ports keep the
+        # human-readable header; the clean_* ports carry only the prompt body,
+        # never a header or an error message, so they are safe to wire into a
+        # CLIPTextEncode or copy back for a workbench safe write.
+        is_negative = bool(data.get("mode_negative_output")) or mode_value == "negative"
+        if is_negative:
             positive_text, negative_text = "", candidate
             clean_positive, clean_negative = "", body_text
         else:
