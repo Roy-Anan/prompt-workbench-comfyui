@@ -1510,7 +1510,13 @@ class WorkflowStore:
         ref = _clean_source_ref(source_history_id)
         if not ref:
             return None
-        for entry in self.list_drafts(workflow_id):
+        try:
+            drafts = self.list_drafts(workflow_id)
+        except (FileNotFoundError, WorkflowError, ValueError, LookupError):
+            # The linked workflow was deleted or its folder is unreachable;
+            # a dangling history record must not break the history listing.
+            return None
+        for entry in drafts:
             if entry.get("source_history_id") == ref:
                 return {"id": entry["id"], "name": entry["name"]}
         return None

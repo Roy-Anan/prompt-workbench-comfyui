@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 import asset_library
 import datadir
+import generation_history
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -69,6 +70,12 @@ class ReferenceImport(BaseModel):
     paths: list[str]
     group_id: int | None = None
     tags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class HistoryImport(BaseModel):
+    filename: str
+    subfolder: str = ""
     note: str = ""
 
 
@@ -190,6 +197,31 @@ def import_reference(payload: ReferenceImport):
             )
         return {"items": created}
     except (ValueError, LookupError) as exc:
+        raise _fail(exc) from exc
+
+
+@router.post("/import-history")
+def import_history_image(payload: HistoryImport):
+    """Register a recorded ComfyUI output image as a library reference.
+
+    The file stays in the configured output directory (no bytes are copied);
+    only a reference record is added so it can be reused as a model cover or
+    other library thumbnail. Missing / escaped / non-image names are 404.
+    """
+    settings = datadir.load_settings_file(datadir.default_data_root()) or {}
+    output_dir = (settings.get("storage") or {}).get("output", "")
+    path = generation_history.resolve_image_path(
+        output_dir, payload.filename, payload.subfolder
+    )
+    if path is None:
+        raise HTTPException(status_code=404, detail="历史图片不存在或不可访问")
+    try:
+        with _connect() as connection:
+            created = asset_library.import_references(
+                connection, [str(path)], note=payload.note
+            )
+        return {"items": created}
+    except (ValueError, LookupError, OSError) as exc:
         raise _fail(exc) from exc
 
 

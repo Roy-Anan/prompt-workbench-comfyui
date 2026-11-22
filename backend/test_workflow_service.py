@@ -834,6 +834,12 @@ def test_draft_source_history_link_and_lookup(tmp_path):
     assert store.find_linked_draft("", "pid-abc-123") is None
     assert store.find_linked_draft("   ", "pid-abc-123") is None
 
+    # The linked workflow was deleted: a dangling history record must not
+    # raise FileNotFoundError from the draft lookup.
+    assert store.find_linked_draft(
+        "11111111-1111-1111-1111-111111111111", "pid-abc-123"
+    ) is None
+
     # Non-string / blank source refs normalize back to None.
     plain = store.save_draft(
         workflow_id, None, "无来源草稿", "positive2", None, "", source_history_id=123

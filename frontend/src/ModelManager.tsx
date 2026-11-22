@@ -28,6 +28,10 @@ type ModelCatalog = { checkpoints: CatalogEntry[]; online?: boolean };
 
 type AssetItem = { id: number; name: string; exists: boolean; group_name: string | null };
 
+type HistoryImage = { filename: string; subfolder?: string; exists?: boolean | null };
+type HistoryRecord = { prompt_id: string; created_at: string; images: HistoryImage[] };
+type HistoryPick = HistoryImage & { prompt_id: string; created_at: string };
+
 type FormState = {
   id: string | null;
   display_name: string;
@@ -82,6 +86,20 @@ function coverUrl(id: number): string {
   return `/api/assets/image?asset_id=${id}`;
 }
 
+function historyImageUrl(image: HistoryImage): string {
+  const params = new URLSearchParams({
+    filename: image.filename,
+    subfolder: image.subfolder || "",
+  });
+  return `/api/history/image?${params.toString()}`;
+}
+
+function shortTime(value: string): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value.slice(0, 10) : parsed.toLocaleString();
+}
+
 export default function ModelManager() {
   const [docs, setDocs] = useState<ModelDoc[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
@@ -95,6 +113,9 @@ export default function ModelManager() {
   const [form, setForm] = useState<FormState | null>(null);
   const [detail, setDetail] = useState<ModelDoc | null>(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+  const [historyPicks, setHistoryPicks] = useState<HistoryPick[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -160,6 +181,51 @@ export default function ModelManager() {
       setForm((prev) => (prev ? { ...prev, rules_text: payload.text } : prev));
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
+    }
+  }
+
+  async function openHistoryPicker() {
+    setHistoryPickerOpen(true);
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const payload = await apiGet<{ items: HistoryRecord[] }>("/api/history/all?kind=prompt");
+      const picks: HistoryPick[] = [];
+      for (const record of payload.items) {
+        for (const image of record.images ?? []) {
+          if (image.exists === false) continue;
+          picks.push({
+            ...image,
+            prompt_id: record.prompt_id,
+            created_at: record.created_at,
+          });
+        }
+      }
+      setHistoryPicks(picks);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function pickHistory(pick: HistoryPick) {
+    setBusy(true);
+    setError(null);
+    try {
+      const resp = await apiPost<{ items: AssetItem[] }>("/api/assets/import-history", {
+        filename: pick.filename,
+        subfolder: pick.subfolder || "",
+      });
+      const created = resp.items[0];
+      if (!created) throw new Error("历史图片登记失败");
+      setAssets((prev) => [...prev.filter((item) => item.id !== created.id), created]);
+      setForm((prev) => (prev ? { ...prev, cover_asset_id: String(created.id) } : prev));
+      setHistoryPickerOpen(false);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -514,7 +580,7 @@ export default function ModelManager() {
               </label>
 
               <label>
-                代表图（素材库）
+                代表图（素材库 / 生成历史）
                 <div className="mg-cover-row">
                   {form.cover_asset_id ? (
                     <>
@@ -533,7 +599,10 @@ export default function ModelManager() {
                       </button>
                     </>
                   ) : (
-                    <button onClick={() => setAssetPickerOpen(true)}>从素材库选择</button>
+                    <>
+                      <button onClick={() => setAssetPickerOpen(true)}>从素材库选择</button>
+                      <button onClick={() => void openHistoryPicker()}>从生成历史选择</button>
+                    </>
                   )}
                 </div>
               </label>
@@ -585,12 +654,42 @@ export default function ModelManager() {
                     }}
                     title={asset.name}
                   >
-                    <img src={coverUrl(asset.id)} alt={asset.name} loading="lazy" />
+                    <img src={coverUrl(asset.id)} alt={asset.name} />
                     <span>{asset.name}</span>
                   </button>
                 ))}
               {assets.length === 0 && <p className="muted">素材库里还没有图片。</p>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {historyPickerOpen && (
+        <div className="mg-modal" onClick={() => setHistoryPickerOpen(false)}>
+          <div className="mg-modal-body mg-picker" onClick={(event) => event.stopPropagation()}>
+            <div className="mg-modal-head">
+              <h3>从生成历史选择</h3>
+              <button onClick={() => setHistoryPickerOpen(false)}>关闭</button>
+            </div>
+            {historyLoading ? (
+              <p className="muted">读取历史图片…</p>
+            ) : historyPicks.length === 0 ? (
+              <p className="muted">生成历史里还没有可用图片。</p>
+            ) : (
+              <div className="mg-picker-grid">
+                {historyPicks.map((pick) => (
+                  <button
+                    key={`${pick.subfolder || ""}/${pick.filename}`}
+                    className="mg-picker-item"
+                    onClick={() => void pickHistory(pick)}
+                    title={pick.filename}
+                  >
+                    <img src={historyImageUrl(pick)} alt={pick.filename} />
+                    <span>{shortTime(pick.created_at)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

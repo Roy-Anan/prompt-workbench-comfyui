@@ -2,6 +2,7 @@ import base64
 from pathlib import Path
 
 import asset_api
+import datadir
 import pytest
 
 
@@ -146,6 +147,42 @@ def test_invalid_imports_rejected(client, tmp_path):
         headers=headers,
     )
     assert missing.status_code == 400
+
+
+def test_import_history_image_as_reference(client, tmp_path):
+    test_client, main = client
+    headers = _auth()
+
+    output_dir = tmp_path / "comfy-output"
+    output_dir.mkdir()
+    shot = output_dir / "grid_001.png"
+    shot.write_bytes(_png())
+    datadir.save_settings_file(
+        main.DATA_ROOT, {"storage": {"output": str(output_dir)}}
+    )
+
+    resp = test_client.post(
+        "/api/assets/import-history",
+        json={"filename": "grid_001.png", "subfolder": ""},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    item = resp.json()["items"][0]
+    assert item["kind"] == "reference"
+    assert item["exists"] is True
+
+    image = test_client.get(
+        f"/api/assets/image?asset_id={item['id']}", headers=headers
+    )
+    assert image.status_code == 200
+    assert image.content == _png()
+
+    missing = test_client.post(
+        "/api/assets/import-history",
+        json={"filename": "nope.png"},
+        headers=headers,
+    )
+    assert missing.status_code == 404
 
 
 def test_missing_image_proxy_404(client):
