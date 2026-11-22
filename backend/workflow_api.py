@@ -267,6 +267,108 @@ def _clean_candidate_content(content: str) -> str:
     return text
 
 
+# Explanation/advice headings that a local model may append after the actual
+# prompt. Such blocks are prose breakdowns or parameter suggestions, not usable
+# prompt tags, and are dropped by the conservative prose cleaner below.
+_PROSE_HEADING_KEYWORDS = (
+    "候选说明",
+    "候选解析",
+    "prompt 候选",
+    "建议后续",
+    "后续测试",
+    "测试变量",
+    "参数建议",
+    "参数说明",
+    "采样器建议",
+    "调度器建议",
+    "未提供参数",
+    "未添加",
+    "使用说明",
+    "补充说明",
+    "人物设定",
+    "服装设定",
+    "动作与姿态",
+    "动作姿态",
+    "构图与视角",
+    "构图视角",
+    "光线与氛围",
+    "光线氛围",
+    "背景设定",
+    "风格设定",
+    "质量说明",
+    "画面说明",
+    "参数边界",
+    "画面要素",
+)
+
+_PROMPT_SECTION_RE = re.compile(
+    r"^\s*(?:正向|负向|positive|negative)\s*[:：]", re.IGNORECASE
+)
+_PROSE_DIVIDER_RE = re.compile(r"^\s*(?:---+|\*\*\*+|___+)\s*$")
+
+
+def _is_prose_heading(line: str) -> bool:
+    """Heuristic: a heading-style explanation line, not a prompt tag sentence.
+
+    A line counts only when it carries a known explanation keyword and has a
+    heading shape (markdown heading, bold bullet, or a colon-led explanation).
+    Plain tag lines and ordinary description sentences are left untouched.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if not any(keyword in lowered for keyword in _PROSE_HEADING_KEYWORDS):
+        return False
+    if stripped.startswith("#"):
+        return True
+    if re.match(r"^\s*[-*]\s*\*\*", stripped):
+        return True
+    return "：" in stripped or ":" in stripped
+
+
+def _strip_candidate_prose(text: str) -> str:
+    """Drop explanatory/prose blocks that drifted into a candidate reply.
+
+    A local model sometimes appends a breakdown section (character/outfit/pose
+    breakdown, lighting notes, sampler/scheduler suggestions) after the actual
+    prompt. Those headings and their bullet lines cannot be pasted into a
+    prompt node, so they are removed conservatively. A divider only starts a
+    prose block when the following non-empty line is itself a prose heading;
+    dividers inside the prompt body are preserved.
+    """
+    kept: list[str] = []
+    in_prose = False
+    pending_divider = False
+    for line in text.splitlines():
+        if _PROMPT_SECTION_RE.match(line):
+            in_prose = False
+            pending_divider = False
+            rest = _PROMPT_SECTION_RE.sub("", line).strip()
+            if rest:
+                kept.append(rest)
+            continue
+        if in_prose:
+            continue
+        if _PROSE_DIVIDER_RE.match(line):
+            pending_divider = True
+            continue
+        if pending_divider:
+            if not line.strip():
+                continue
+            if _is_prose_heading(line):
+                in_prose = True
+                pending_divider = False
+                continue
+            kept.append("---")
+            pending_divider = False
+        if _is_prose_heading(line):
+            in_prose = True
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
 def _dedupe_prompt_tags(text: str) -> str:
     """Deduplicate comma-separated tags within each line, keeping the first
     occurrence and its original wording. Comparison is case-insensitive;
@@ -364,6 +466,11 @@ def _user_message(
         )
     if mode_entry and mode_entry.get("instruction"):
         lines.append(mode_entry["instruction"])
+    lines.append(
+        "输出只保留可直接粘贴进绘图节点的 Prompt 内容；不要写候选说明、分点解析或"
+        "画面要素解释，不要给采样器、调度器、步数、CFG、Seed、分辨率等参数建议，"
+        "也不要写使用说明、寒暄或总结。"
+    )
     return "\n".join(lines)
 @router.get("")
 def list_workflows():
@@ -868,6 +975,7 @@ def _generate_candidate(
         )
 
     cleaned = _clean_candidate_content(result["content"])
+    cleaned = _strip_candidate_prose(cleaned)
     cleaned = _dedupe_prompt_tags(cleaned)
     if not cleaned:
         runtime_log.logger().warning(

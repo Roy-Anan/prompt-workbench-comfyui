@@ -392,6 +392,118 @@ def test_candidate_rejects_empty_cleaned(client, monkeypatch):
     assert response.status_code == 502
 
 
+_SAMPLE_PROSE_CANDIDATE = """Positive:
+suyuexi, 1girl, solo, young adult woman, long black hair, white loose dress
+
+Negative:
+cartoon, anime, 3d render, lowres, bad anatomy
+
+---
+
+### ✅ **Prompt 候选说明：**
+- **人物设定**：已包含“1girl”、“young adult woman”等关键词。
+- **服装设定**：明确使用“white loose dress”对应连衣裙。
+- **动作与姿态**：通过“sitting”、“legs slightly apart”描述坐姿。
+- **构图与视角**：使用“medium shot”、“slightly low-angle view”强化镜头。
+- **光线与氛围**：通过“soft side lighting from the right”构建氛围。
+- **背景设定**：使用“large window with sunset view”强化背景。
+- **未提供参数**：未添加任何未经确认的参数，如触发词、采样器、分辨率等。
+
+### ✅ **建议后续测试变量：**
+- **采样器**：DPM++ 系列（如 DPM++ 2M, DPM++ 2M Karras）
+- **调度器**：Karras 或 ESG
+"""
+
+
+def test_strip_candidate_prose_keeps_prompt_drops_explanation():
+    cleaned = workflow_api._strip_candidate_prose(_SAMPLE_PROSE_CANDIDATE)
+    assert "suyuexi, 1girl, solo" in cleaned
+    assert "cartoon, anime, 3d render" in cleaned
+    assert "Positive:" not in cleaned
+    assert "Negative:" not in cleaned
+    for dropped in (
+        "候选说明",
+        "人物设定",
+        "服装设定",
+        "动作与姿态",
+        "构图与视角",
+        "光线与氛围",
+        "背景设定",
+        "未提供参数",
+        "建议后续",
+        "采样器",
+        "调度器",
+        "DPM++",
+        "Karras",
+    ):
+        assert dropped not in cleaned
+
+
+def test_strip_candidate_prose_keeps_plain_tags_and_sentence():
+    plain = "1girl, smile, long black hair, white dress"
+    assert workflow_api._strip_candidate_prose(plain) == plain
+
+    sentence = (
+        "A young woman with long black hair sits on a comfortable sofa, "
+        "leaning forward slightly in soft daylight from a large window."
+    )
+    assert workflow_api._strip_candidate_prose(sentence) == sentence
+
+
+def test_strip_candidate_prose_keeps_divider_inside_prompt():
+    body = "1girl, smile\n\n---\n\nlong black hair, white dress"
+    cleaned = workflow_api._strip_candidate_prose(body)
+    assert "---" in cleaned
+    assert "1girl, smile" in cleaned
+    assert "long black hair, white dress" in cleaned
+
+
+def test_strip_candidate_prose_drops_heading_without_divider():
+    body = "1girl, smile\n\n### 候选说明：\n- 人物设定：少女，黑色长发"
+    cleaned = workflow_api._strip_candidate_prose(body)
+    assert cleaned == "1girl, smile"
+
+
+def test_user_message_forbids_explanation_and_parameter_advice():
+    message = workflow_api._user_message([], None, "draft")
+    assert "不要写候选说明" in message
+    assert "参数建议" in message
+
+
+def test_candidate_strips_explanation_block(client, monkeypatch):
+    test_client, _ = client
+    workflow_id = _import(test_client, _api_workflow())
+    monkeypatch.setattr(
+        workflow_api.comfy_client,
+        "queue_has_active_task",
+        lambda url: {"online": True, "active": False, "error": None},
+    )
+
+    def fake_chat(url, model, messages, timeout=30.0, options=None):
+        return {
+            "ok": True,
+            "content": _SAMPLE_PROSE_CANDIDATE,
+            "model": model,
+            "error": None,
+        }
+
+    monkeypatch.setattr(llm_client, "chat", fake_chat)
+
+    response = test_client.post(
+        f"/api/workflows/{workflow_id}/prompt/candidates",
+        headers=AUTH,
+        json={"model": "qwen3:latest"},
+    )
+    assert response.status_code == 200
+    candidate = response.json()["candidates"][0]
+    assert "suyuexi, 1girl, solo" in candidate
+    assert "cartoon, anime, 3d render" in candidate
+    assert "Positive:" not in candidate
+    assert "Negative:" not in candidate
+    for dropped in ("候选说明", "人物设定", "采样器", "DPM++", "Karras"):
+        assert dropped not in candidate
+
+
 def test_draft_create_read_update_delete_roundtrip(client):
     test_client, _ = client
     workflow_id = _import(test_client, _api_workflow())
