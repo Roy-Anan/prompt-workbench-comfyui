@@ -1,5 +1,5 @@
 import generation_history
-import workflow_api
+from workflow_service import analyze_workflow
 
 AUTH = {"Authorization": "Bearer test-session-token"}
 
@@ -40,60 +40,33 @@ def _confirm(test_client, workflow_id):
     assert response.status_code == 200
 
 
-def _submit_one(test_client, monkeypatch, prompt_id="prompt-1", draft_id=None):
+def _seed_one(test_client, main, prompt_id="prompt-1", draft_id=None):
+    """Seed a history row directly; the workbench no longer submits prompts."""
     workflow_id = _import(test_client, _api_workflow())
     _confirm(test_client, workflow_id)
-
-    monkeypatch.setattr(
-        workflow_api.comfy_client, "comfyui_online", lambda url: True
-    )
-    monkeypatch.setattr(
-        workflow_api.comfy_client,
-        "probe_vram_free",
-        lambda url, timeout=2.5: {
-            "online": True,
-            "vram_free": 8 * 1024 ** 3,
-            "error": None,
-        },
-    )
-    monkeypatch.setattr(
-        workflow_api.comfy_client,
-        "loaded_ollama_models",
-        lambda url: {"online": True, "reachable": True, "models": [], "error": None},
-    )
-    monkeypatch.setattr(
-        workflow_api.comfy_client,
-        "release_resources",
-        lambda ollama_url, comfyui_url, timeout=5.0: {
-            "ollama_reachable": True,
-            "ollama_stopped": [],
-            "ollama_errors": [],
-            "ollama_still_resident": [],
-            "comfyui_freed": True,
-            "comfyui_error": None,
-        },
-    )
-
-    def fake_submit(url, prompt_api, client_id, timeout=10.0):
-        return {
-            "ok": True,
-            "prompt_id": prompt_id,
-            "node_errors": {},
-            "error": None,
-        }
-
-    monkeypatch.setattr(workflow_api.comfy_client, "submit_prompt", fake_submit)
-    payload = {"draft_id": draft_id} if draft_id is not None else {}
-    response = test_client.post(
-        f"/api/workflows/{workflow_id}/tasks", headers=AUTH, json=payload
-    )
-    assert response.status_code == 200
+    report = analyze_workflow(_api_workflow())
+    with main.model_identity.connect(
+        main.datadir.database_path(main.DATA_ROOT)
+    ) as connection:
+        main.generation_history.ensure_schema(connection)
+        main.generation_history.record_snapshot(
+            connection,
+            prompt_id,
+            workflow_id,
+            [
+                {"role": "positive", "text": "positive"},
+                {"role": "negative", "text": "negative"},
+            ],
+            report,
+            "submitted",
+            draft_id,
+        )
     return workflow_id
 
 
-def test_submit_records_frozen_snapshot(client, monkeypatch):
-    test_client, _ = client
-    workflow_id = _submit_one(test_client, monkeypatch)
+def test_submit_records_frozen_snapshot(client):
+    test_client, main = client
+    workflow_id = _seed_one(test_client, main)
 
     body = test_client.get("/api/history", headers=AUTH).json()
     assert len(body["items"]) == 1
@@ -108,9 +81,9 @@ def test_submit_records_frozen_snapshot(client, monkeypatch):
     assert record["task_status"] == "submitted"
 
 
-def test_submit_records_linked_draft(client, monkeypatch):
-    test_client, _ = client
-    _submit_one(test_client, monkeypatch, draft_id="draft-abc")
+def test_submit_records_linked_draft(client):
+    test_client, main = client
+    _seed_one(test_client, main, draft_id="draft-abc")
 
     record = test_client.get(
         "/api/history/prompt-1", headers=AUTH
@@ -118,9 +91,9 @@ def test_submit_records_linked_draft(client, monkeypatch):
     assert record["draft_id"] == "draft-abc"
 
 
-def test_snapshot_survives_later_draft_edit(client, monkeypatch):
-    test_client, _ = client
-    workflow_id = _submit_one(test_client, monkeypatch)
+def test_snapshot_survives_later_draft_edit(client):
+    test_client, main = client
+    workflow_id = _seed_one(test_client, main)
 
     write_response = test_client.post(
         f"/api/workflows/{workflow_id}/write",
@@ -136,51 +109,9 @@ def test_snapshot_survives_later_draft_edit(client, monkeypatch):
     assert record["negative_prompt"] == "negative"
 
 
-def test_refresh_succeeded_attaches_images(client, monkeypatch):
-    test_client, _ = client
-    workflow_id = _submit_one(test_client, monkeypatch)
-
-    monkeypatch.setattr(
-        workflow_api.comfy_client,
-        "fetch_task_states",
-        lambda url: {
-            "online": True,
-            "error": None,
-            "running": [],
-            "pending": [],
-            "history": {
-                "prompt-1": {
-                    "status_str": "success",
-                    "completed": True,
-                    "outputs": {
-                        "9": {"images": [{"filename": "a.png", "subfolder": "", "type": "output"}]}
-                    },
-                }
-            },
-        },
-    )
-
-    test_client.get(
-        f"/api/workflows/{workflow_id}/tasks?refresh=true", headers=AUTH
-    )
-    record = test_client.get(
-        "/api/history/prompt-1", headers=AUTH
-    ).json()
-    assert record["task_status"] == "succeeded"
-    assert record["images"] == [
-        {
-            "node_id": "9",
-            "filename": "a.png",
-            "subfolder": "",
-            "type": "output",
-            "exists": None,
-        }
-    ]
-
-
-def test_history_filter_by_workflow_and_404(client, monkeypatch):
-    test_client, _ = client
-    workflow_id = _submit_one(test_client, monkeypatch)
+def test_history_filter_by_workflow_and_404(client):
+    test_client, main = client
+    workflow_id = _seed_one(test_client, main)
 
     filtered = test_client.get(
         f"/api/history?workflow_id={workflow_id}", headers=AUTH
@@ -199,9 +130,9 @@ def test_history_filter_by_workflow_and_404(client, monkeypatch):
     assert missing.status_code == 404
 
 
-def test_history_filters_by_status_keyword_and_combo(client, monkeypatch):
+def test_history_filters_by_status_keyword_and_combo(client):
     test_client, main = client
-    workflow_id = _submit_one(test_client, monkeypatch, prompt_id="prompt-1")
+    workflow_id = _seed_one(test_client, main, prompt_id="prompt-1")
 
     with main.model_identity.connect(
         main.datadir.database_path(main.DATA_ROOT)

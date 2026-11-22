@@ -205,48 +205,6 @@ type PromptProfile = {
   errors: string[];
 };
 type PromptProfilesResponse = { items: PromptProfile[] };
-type ComfyTask = {
-  prompt_id: string;
-  workflow_id: string;
-  status: string;
-  submitted_at: string;
-  updated_at: string;
-  node_errors: unknown;
-  last_error: string | null;
-  outputs: unknown;
-};
-type TasksResponse = {
-  items: ComfyTask[];
-  sync_error: string | null;
-};
-
-type QueueItem = {
-  queue_id: string;
-  workflow_id: string;
-  workflow_name: string;
-  note: string;
-  sort_order: number;
-  status: string;
-  prompt_id: string | null;
-  last_error: string | null;
-  has_snapshot: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-type QueueResponse = {
-  items: QueueItem[];
-  global_paused: boolean;
-};
-
-const QUEUE_STATUS_LABEL: Record<string, string> = {
-  pending: "等待中",
-  paused: "已暂停",
-  submitting: "提交中",
-  submitted: "已入队",
-  failed: "失败",
-  cancelled: "已取消",
-};
 type SnapshotFile = { node_id?: string; file: string };
 
 type EnvSnapshot = {
@@ -266,6 +224,11 @@ type ReleaseVramResult = {
   ollama_still_resident: string[];
   comfyui_freed: boolean;
   comfyui_error: string | null;
+};
+
+type ExportWorkflowPayload = {
+  filename: string;
+  workflow: Record<string, unknown>;
 };
 
 type DraftImage = {
@@ -423,20 +386,6 @@ const LEGACY_PERSONA_IDS: Record<string, string> = {
 };
 const DEFAULT_PERSONA = "提示词助手";
 
-const TASK_STATUS_LABEL: Record<string, string> = {
-  submitted: "待运行",
-  running: "运行中",
-  succeeded: "已完成",
-  failed: "失败",
-  interrupted: "已中断",
-  unknown: "未知",
-};
-
-function formatTaskTime(value: string): string {
-  if (!value) return "—";
-  return value.replace("T", " ").slice(0, 16);
-}
-
 function formatVersionStamp(stamp: string): string {
   if (!stamp) return "—";
   const [date, time] = stamp.split("-");
@@ -538,23 +487,6 @@ function promptCountLabel(text: string): string {
   const tokens = estimatePromptTokens(text);
   const base = `${len} 字符 · ${fragments} 条 · 约 ${tokens} token`;
   return len > PROMPT_MAX_CHARS ? `${base}（已超上限）` : base;
-}
-
-function outputFilenames(outputs: unknown): string[] {
-  if (typeof outputs !== "object" || outputs === null) return [];
-  const record = outputs as Record<string, unknown>;
-  const names: string[] = [];
-  for (const entry of Object.values(record)) {
-    if (Array.isArray(entry)) {
-      for (const item of entry) {
-        if (typeof item === "object" && item !== null) {
-          const filename = (item as Record<string, unknown>).filename;
-          if (typeof filename === "string") names.push(filename);
-        }
-      }
-    }
-  }
-  return names;
 }
 
 const ACTUAL_SUMMARY: Array<{ key: string; label: string }> = [
@@ -719,8 +651,6 @@ function parseOptionalInt(
 
 type WorkbenchProps = { comfyuiUrl: string; protectedTerms: string[] };
 
-type TaskProgress = { value: number; max: number; node?: string };
-
 export default function WorkflowWorkbench({
   comfyuiUrl,
   protectedTerms,
@@ -804,22 +734,7 @@ export default function WorkflowWorkbench({
   const [importedPrompt, setImportedPrompt] = useState<PromptImport | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
-  const [comfyTasks, setComfyTasks] = useState<ComfyTask[]>([]);
-  const [taskBusy, setTaskBusy] = useState(false);
-  const [taskSyncError, setTaskSyncError] = useState<string | null>(null);
-  const [taskProgress, setTaskProgress] = useState<
-    Record<string, TaskProgress>
-  >({});
-  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
-  const [queuePaused, setQueuePaused] = useState(false);
-  const [queueBusy, setQueueBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
-  const [queueGlobal, setQueueGlobal] = useState(
-    () => readStoredParam("workbench.queueGlobal") === "1",
-  );
-  const taskWsRef = useRef<WebSocket | null>(null);
-  const activePromptRef = useRef<string | null>(null);
-  const wsReconnectRef = useRef<number | null>(null);
   const [versions, setVersions] = useState<VersionEntry[]>([]);
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
   const [draftName, setDraftName] = useState("");
@@ -946,8 +861,6 @@ export default function WorkflowWorkbench({
       setNegativeText(
         result.working_prompts.find((item) => item.role === "negative")?.text ?? "",
       );
-      setComfyTasks([]);
-      setTaskSyncError(null);
       setVersions([]);
       setDrafts([]);
       setDraftName("");
@@ -972,8 +885,6 @@ export default function WorkflowWorkbench({
       setImportedPrompt(null);
       setPasteOpen(false);
       setPasteText("");
-      void loadTasks(false);
-      void loadQueue();
       void loadVersions(id);
       void loadDrafts(id, false);
       setMessage(`已打开：${result.manifest.filename}`);
@@ -1020,8 +931,6 @@ export default function WorkflowWorkbench({
         working_prompts: [],
       });
       void loadCompare(result.id);
-      setComfyTasks([]);
-      setTaskSyncError(null);
       setDrafts([]);
       setDraftName("");
       setDraftNote("");
@@ -1399,53 +1308,6 @@ export default function WorkflowWorkbench({
     setPasteText("");
   }
 
-  async function loadTasks(refresh: boolean) {
-    if (!workflowId) return;
-    try {
-      const result = await apiGet<TasksResponse>(
-        `/api/workflows/${workflowId}/tasks${refresh ? "?refresh=true" : ""}`,
-      );
-      setComfyTasks(result.items);
-      setTaskSyncError(result.sync_error);
-    } catch (error) {
-      setTaskSyncError(String(error));
-    }
-  }
-
-  async function loadQueue() {
-    try {
-      const url =
-        queueGlobal || !workflowId
-          ? "/api/queue"
-          : `/api/queue?workflow_id=${encodeURIComponent(workflowId)}`;
-      const result = await apiGet<QueueResponse>(url);
-      setQueueItems(result.items);
-      setQueuePaused(result.global_paused);
-    } catch {
-      // Queue is an enhancement; leave the existing task panel intact on error.
-    }
-  }
-
-  function toggleQueueGlobal(next: boolean) {
-    setQueueGlobal(next);
-    persistParam("workbench.queueGlobal", next ? "1" : "0");
-    void loadQueue();
-  }
-
-  async function enqueueTask() {
-    if (!workflowId) return;
-    setQueueBusy(true);
-    try {
-      await apiPost<QueueItem>("/api/queue", { workflow_id: workflowId, note: "" });
-      setMessage("已加入本地待发队列，空闲时按顺序逐条提交。");
-      await loadQueue();
-    } catch (error) {
-      setMessage(`加入队列失败：${String(error)}`);
-    } finally {
-      setQueueBusy(false);
-    }
-  }
-
   async function releaseVram() {
     setReleaseBusy(true);
     try {
@@ -1476,171 +1338,45 @@ export default function WorkflowWorkbench({
     }
   }
 
-  async function toggleQueueItem(queueId: string, paused: boolean) {
-    setQueueBusy(true);
+  async function exportWorkflowJson() {
+    if (!workflowId) return;
     try {
-      await apiPost(`/api/queue/${queueId}/pause`, { paused });
-      await loadQueue();
-    } catch (error) {
-      setMessage(`暂停/恢复失败：${String(error)}`);
-    } finally {
-      setQueueBusy(false);
-    }
-  }
-
-  async function moveQueueItem(queueId: string, direction: "up" | "down") {
-    setQueueBusy(true);
-    try {
-      const result = await apiPost<{ items: QueueItem[] }>(
-        `/api/queue/${queueId}/move`,
-        { direction },
+      const result = await apiGet<ExportWorkflowPayload>(
+        `/api/workflows/${workflowId}/export`,
       );
-      setQueueItems(result.items);
-    } catch (error) {
-      setMessage(`调整顺序失败：${String(error)}`);
-    } finally {
-      setQueueBusy(false);
-    }
-  }
-
-  async function cancelQueueItem(queueId: string) {
-    setQueueBusy(true);
-    try {
-      await apiDelete(`/api/queue/${queueId}`, {});
-      setMessage("已从本地队列移除。");
-      await loadQueue();
-    } catch (error) {
-      setMessage(`移除队列项失败：${String(error)}`);
-    } finally {
-      setQueueBusy(false);
-    }
-  }
-
-  async function toggleGlobalPause() {
-    setQueueBusy(true);
-    try {
-      const next = !queuePaused;
-      const result = await apiPost<{ global_paused: boolean }>(
-        "/api/queue/pause-all",
-        { paused: next },
+      downloadLocalFile(
+        result.filename || "workflow.json",
+        JSON.stringify(result.workflow, null, 2),
+        "application/json",
       );
-      setQueuePaused(result.global_paused);
+      setMessage("已导出 API 格式工作流 JSON，可拖入 ComfyUI 画布后排队出图。");
     } catch (error) {
-      setMessage(`全局暂停切换失败：${String(error)}`);
+      setMessage(`导出工作流失败：${String(error)}`);
+    }
+  }
+
+  async function resetWorkingCopy() {
+    if (!workflowId) return;
+    setBusy(true);
+    try {
+      const result = await apiPost<WorkflowDetail>(
+        `/api/workflows/${workflowId}/reset`,
+        {},
+      );
+      setDetail(result);
+      setPositiveText(
+        result.working_prompts.find((item) => item.role === "positive")?.text ?? "",
+      );
+      setNegativeText(
+        result.working_prompts.find((item) => item.role === "negative")?.text ?? "",
+      );
+      setMessage("已清空本次写入，工作副本回退到导入时的原始内容。");
+    } catch (error) {
+      setMessage(`清空工作副本失败：${String(error)}`);
     } finally {
-      setQueueBusy(false);
+      setBusy(false);
     }
   }
-
-  function taskProgressLabel(task: ComfyTask): string | null {
-    if (task.status !== "running") return null;
-    const progress = taskProgress[task.prompt_id];
-    if (!progress || progress.max <= 0) return null;
-    const pct = Math.round((progress.value / progress.max) * 100);
-    return `进度 ${progress.value}/${progress.max}（${pct}%）`;
-  }
-
-  function handleWsMessage(message: { type?: string; data?: Record<string, unknown> }) {
-    const data = message.data ?? {};
-    if (message.type === "executing") {
-      const pid = data.prompt_id;
-      if (typeof pid === "string") {
-        activePromptRef.current = pid;
-      } else if (pid == null) {
-        activePromptRef.current = null;
-      }
-      return;
-    }
-    if (message.type === "progress") {
-      const pid =
-        typeof data.prompt_id === "string" ? data.prompt_id : activePromptRef.current;
-      const value = Number(data.value);
-      const max = Number(data.max);
-      if (pid && Number.isFinite(value) && Number.isFinite(max) && max > 0) {
-        setTaskProgress((prev) => ({
-          ...prev,
-          [pid]: { value, max, node: typeof data.node === "string" ? data.node : undefined },
-        }));
-      }
-      return;
-    }
-    if (message.type === "executed" || message.type === "execution_error") {
-      const pid = data.prompt_id;
-      if (typeof pid === "string") {
-        setTaskProgress((prev) => {
-          const next = { ...prev };
-          delete next[pid];
-          return next;
-        });
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (!comfyuiUrl.trim()) return;
-    let disposed = false;
-    let socket: WebSocket | null = null;
-
-    // Connect through the workbench's own WS proxy (same origin) instead of
-    // opening ComfyUI's port directly; the backend forwards to ComfyUI so the
-    // browser never sends a cross-port Origin that ComfyUI rejects with 403.
-    const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const wsUrl = `${wsScheme}://${window.location.host}/api/comfyui/ws?clientId=workbench`;
-
-    function scheduleReconnect() {
-      if (disposed) return;
-      wsReconnectRef.current = window.setTimeout(connect, 3000);
-    }
-
-    function connect() {
-      if (disposed) return;
-      try {
-        socket = new WebSocket(wsUrl);
-      } catch {
-        scheduleReconnect();
-        return;
-      }
-      taskWsRef.current = socket;
-      socket.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(String(event.data)) as {
-            type?: string;
-            data?: Record<string, unknown>;
-          };
-          handleWsMessage(parsed);
-        } catch {
-          // Ignore non-JSON or malformed frames; polling remains the fallback.
-        }
-      };
-      socket.onclose = () => {
-        taskWsRef.current = null;
-        if (!disposed) scheduleReconnect();
-      };
-      socket.onerror = () => {
-        socket?.close();
-      };
-    }
-
-    connect();
-    return () => {
-      disposed = true;
-      if (wsReconnectRef.current) window.clearTimeout(wsReconnectRef.current);
-      socket?.close();
-      taskWsRef.current = null;
-    };
-  }, [comfyuiUrl]);
-
-  // While a task is active, keep a slow polling calibration as the fallback
-  // behind the live WebSocket progress; WS gaps never flip a task to failed.
-  useEffect(() => {
-    const hasActive = comfyTasks.some(
-      (task) => task.status === "running" || task.status === "submitted",
-    );
-    if (!hasActive || !workflowId) return;
-    const timer = window.setInterval(() => void loadTasks(true), 5000);
-    return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comfyTasks, workflowId]);
 
   async function loadVersions(id: string) {
     try {
@@ -1965,60 +1701,11 @@ export default function WorkflowWorkbench({
           ?.text ?? "",
       );
       await loadVersions(workflowId);
-      setMessage(
-        "已恢复所选版本；当前内容已另存为一个新的历史版本快照。",
-      );
+      setMessage("已恢复所选历史版本快照的提示词文本。");
     } catch (error) {
       setMessage(`版本恢复失败：${String(error)}`);
     } finally {
       setRestoringStamp(null);
-    }
-  }
-  async function submitTask() {
-    if (!workflowId) return;
-    setTaskBusy(true);
-    try {
-      await apiPost<ComfyTask>(`/api/workflows/${workflowId}/tasks`, {
-        draft_id: currentDraftId,
-      });
-      setMessage("任务已提交到本地 ComfyUI。");
-      await loadTasks(true);
-    } catch (error) {
-      setMessage(`提交被拒绝或失败：${String(error)}`);
-    } finally {
-      setTaskBusy(false);
-    }
-  }
-  async function cancelTask(promptId: string) {
-    if (!workflowId) return;
-    setTaskBusy(true);
-    try {
-      await apiPost(
-        `/api/workflows/${workflowId}/tasks/${promptId}/cancel`,
-        {},
-      );
-      setMessage("任务已取消/中断。");
-      await loadTasks(true);
-    } catch (error) {
-      setMessage(`取消/中断失败：${String(error)}`);
-    } finally {
-      setTaskBusy(false);
-    }
-  }
-  async function retryTask(promptId: string) {
-    if (!workflowId) return;
-    setTaskBusy(true);
-    try {
-      await apiPost(
-        `/api/workflows/${workflowId}/tasks/${promptId}/retry`,
-        {},
-      );
-      setMessage("已按当前工作流重新提交任务。");
-      await loadTasks(true);
-    } catch (error) {
-      setMessage(`重试失败：${String(error)}`);
-    } finally {
-      setTaskBusy(false);
     }
   }
   const canWrite =
@@ -3405,37 +3092,29 @@ export default function WorkflowWorkbench({
           )}
           {detail && (
             <div className="panel">
-              <h3 id="step-08">ComfyUI 任务</h3>
+              <h3 id="step-08">画布出图</h3>
               {detail.manifest.format !== "api" ? (
                 <p className="muted">
-                  UI 格式工作流不能直接提交，请先在 ComfyUI 中导出 API 格式。
+                  UI 格式工作流不能导出 API JSON，请先在 ComfyUI 中导出 API 格式。
                 </p>
               ) : (
                 <>
+                  <p className="muted">
+                    工作台只把提示词写入工作副本，不直接提交 ComfyUI。确认无误后导出 API
+                    工作流 JSON，拖入 ComfyUI 画布排队出图；画布直接生成的记录在历史页手动同步补录。
+                  </p>
                   <div className="actions">
                     <button
-                      disabled={taskBusy || busy || !detail.manifest.confirmed}
-                      onClick={() => void submitTask()}
+                      onClick={() => void exportWorkflowJson()}
+                      disabled={busy}
                     >
-                      {taskBusy ? "提交中…" : "提交到 ComfyUI"}
+                      导出工作流 JSON
                     </button>
                     <button
-                      onClick={() => void loadTasks(true)}
-                      disabled={taskBusy || busy}
+                      onClick={() => void resetWorkingCopy()}
+                      disabled={busy}
                     >
-                      刷新状态
-                    </button>
-                    <button
-                      disabled={queueBusy || busy || !detail.manifest.confirmed}
-                      onClick={() => void enqueueTask()}
-                    >
-                      加入本地队列
-                    </button>
-                    <button
-                      onClick={() => void toggleGlobalPause()}
-                      disabled={queueBusy || busy}
-                    >
-                      {queuePaused ? "恢复队列调度" : "暂停队列调度"}
+                      清空本次写入
                     </button>
                     <button
                       onClick={() => void releaseVram()}
@@ -3446,168 +3125,6 @@ export default function WorkflowWorkbench({
                     <span className="muted">
                       {detail.manifest.confirmed ? "白名单已确认" : "需先确认白名单"}
                     </span>
-                  </div>
-                  {taskSyncError && (
-                    <p className="workflow-warning">状态校准不可用：{taskSyncError}</p>
-                  )}
-                  {comfyTasks.length === 0 ? (
-                    <p className="muted">当前工作流还没有已提交的任务。</p>
-                  ) : (
-                    <div className="workflow-node-list">
-                      {comfyTasks.map((task) => (
-                        <div className="workflow-node-row" key={task.prompt_id}>
-                          <div>
-                            <strong>任务 {task.prompt_id.slice(0, 8)}</strong>
-                            <small>提交于 {formatTaskTime(task.submitted_at)}</small>
-                            {task.last_error && (
-                              <small className="workflow-warning">{task.last_error}</small>
-                            )}
-                            {taskProgressLabel(task) && (
-                              <small>{taskProgressLabel(task)}</small>
-                            )}
-                            {outputFilenames(task.outputs).length > 0 && (
-                              <small>
-                                输出：{outputFilenames(task.outputs).join("、")}
-                              </small>
-                            )}
-                          </div>
-                          <div className="actions">
-                            {(task.status === "submitted" ||
-                              task.status === "running") && (
-                              <button
-                                onClick={() => void cancelTask(task.prompt_id)}
-                                disabled={taskBusy || busy}
-                              >
-                                {task.status === "running" ? "中断" : "取消"}
-                              </button>
-                            )}
-                            {(task.status === "failed" ||
-                              task.status === "interrupted") && (
-                              <button
-                                onClick={() => void retryTask(task.prompt_id)}
-                                disabled={taskBusy || busy}
-                              >
-                                重试
-                              </button>
-                            )}
-                            <span className={`compare-badge ${task.status}`}>
-                              {TASK_STATUS_LABEL[task.status] ?? task.status}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="workflow-queue">
-                    <div className="actions">
-                      <h4>本地待发队列{queuePaused ? "（调度已暂停）" : ""}</h4>
-                      <label className="workflow-meta">
-                        <input
-                          type="checkbox"
-                          checked={queueGlobal}
-                          disabled={queueBusy || busy}
-                          onChange={(event) => toggleQueueGlobal(event.target.checked)}
-                        />
-                        全部工作流
-                      </label>
-                    </div>
-                    {queueItems.length === 0 ? (
-                      <p className="muted">
-                        {queueGlobal
-                          ? "所有工作流都没有排队中的任务。"
-                          : "当前工作流没有排队中的任务。"}
-                      </p>
-                    ) : (
-                      <div className="workflow-node-list">
-                        {queueItems.map((item, index) => {
-                          const settled =
-                            item.status === "submitting" ||
-                            item.status === "submitted";
-                          const cancellable =
-                            item.status === "pending" ||
-                            item.status === "paused" ||
-                            item.status === "failed";
-                          return (
-                            <div className="workflow-node-row" key={item.queue_id}>
-                              <div>
-                                <strong>
-                                  #{index + 1} {item.workflow_name}
-                                </strong>
-                                <small className="workflow-meta">
-                                  {item.has_snapshot
-                                    ? "已冻结快照"
-                                    : "未冻结（提交时用当前副本）"}
-                                </small>
-                                {item.note && <small>备注：{item.note}</small>}
-                                {item.last_error && (
-                                  <small className="workflow-warning">
-                                    {item.last_error}
-                                  </small>
-                                )}
-                              </div>
-                              <div className="actions">
-                                {!settled && (
-                                  <>
-                                    <button
-                                      onClick={() =>
-                                        void toggleQueueItem(
-                                          item.queue_id,
-                                          item.status !== "paused",
-                                        )
-                                      }
-                                      disabled={queueBusy || busy}
-                                    >
-                                      {item.status === "paused"
-                                        ? "恢复"
-                                        : "暂停"}
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        void moveQueueItem(item.queue_id, "up")
-                                      }
-                                      disabled={queueBusy || busy || index === 0}
-                                    >
-                                      上移
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        void moveQueueItem(
-                                          item.queue_id,
-                                          "down",
-                                        )
-                                      }
-                                      disabled={
-                                        queueBusy ||
-                                        busy ||
-                                        index === queueItems.length - 1
-                                      }
-                                    >
-                                      下移
-                                    </button>
-                                  </>
-                                )}
-                                {cancellable && (
-                                  <button
-                                    onClick={() =>
-                                      void cancelQueueItem(item.queue_id)
-                                    }
-                                    disabled={queueBusy || busy}
-                                  >
-                                    移除
-                                  </button>
-                                )}
-                                <span
-                                  className={`compare-badge ${item.status}`}
-                                >
-                                  {QUEUE_STATUS_LABEL[item.status] ??
-                                    item.status}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 </>
               )}

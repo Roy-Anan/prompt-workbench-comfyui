@@ -156,6 +156,27 @@ def fetch_task_states(
     }
 
 
+def fetch_history_raw(
+    comfyui_url: str, timeout: float = 3.0
+) -> dict[str, Any]:
+    """Return the raw ComfyUI ``/history`` payload for manual history backfill.
+
+    Unlike :func:`fetch_task_states`, the full entry (including the stored API
+    workflow under ``prompt``) is preserved so a natively queued generation can
+    be reverse-parsed locally. Read-only; nothing is submitted or cancelled.
+    """
+    data, error, _reachable = _get_json(
+        comfyui_url.rstrip("/") + "/history", timeout
+    )
+    if data is None:
+        return {"online": False, "error": error, "history": {}}
+    history: dict[str, Any] = {}
+    for prompt_id, entry in data.items():
+        if isinstance(prompt_id, str) and isinstance(entry, dict):
+            history[prompt_id] = entry
+    return {"online": True, "error": None, "history": history}
+
+
 def _latent_pixel_count(prompt_api: Any) -> int | None:
     """Sum width*height from latent-size nodes; None when not derivable."""
     if not isinstance(prompt_api, dict):

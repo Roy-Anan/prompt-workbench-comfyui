@@ -1687,7 +1687,7 @@ export default function App() {
               <div className="w-step active" onClick={() => goToStep("05")}><span className="num">05</span>提示词候选</div>
               <div className="w-step" onClick={() => goToStep("06")}><span className="num">06</span>编辑工作副本</div>
               <div className="w-step" onClick={() => goToStep("07")}><span className="num">07</span>草稿与版本</div>
-              <div className="w-step" onClick={() => goToStep("08")}><span className="num">08</span>显存检查与提交</div>
+              <div className="w-step" onClick={() => goToStep("08")}><span className="num">08</span>画布出图</div>
               <div className="w-step" onClick={() => goToStep("09")}><span className="num">09</span>生成历史</div>
             </div>
           )}

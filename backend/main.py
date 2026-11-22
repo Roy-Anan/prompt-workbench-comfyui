@@ -26,9 +26,11 @@ from pydantic import BaseModel, Field
 import asset_library
 import backup_export
 import backup_restore
+import comfy_client
 import comfy_tasks
 import datadir
 import generation_history
+import history_sync
 import llm_history
 import lora_metadata
 import model_catalog
@@ -36,12 +38,10 @@ import model_identity
 import profile_source
 import prompt_profiles
 import prompt_personas
-import queue_dispatcher
 import rule_engine
 import rule_store
 import runtime_log
 import sidebar_summary as sidebar_summary_module
-import task_queue
 import vision_api
 from asset_api import router as asset_router
 from workflow_api import router as workflow_router
@@ -386,36 +386,21 @@ class ProfileImport(BaseModel):
     candidate_keys: list[str] | None = None
 
 
-class QueueEnqueue(BaseModel):
-    workflow_id: str = Field(min_length=1, max_length=120)
-    note: str = Field(default="", max_length=1000)
+def _clear_deprecated_queue() -> None:
+    """Drop rows left by the retired local submission queue.
 
-
-class QueueItemPause(BaseModel):
-    paused: bool
-
-
-class QueueItemMove(BaseModel):
-    direction: str
-
-
-class QueueGlobalPause(BaseModel):
-    paused: bool
-
-
-def _recover_orphan_queue_items() -> None:
-    """Requeue items left in ``submitting`` by a previous process."""
+    The queue table is kept on disk for schema compatibility, but the workbench
+    no longer enqueues or dispatches ComfyUI prompts; any leftover rows are
+    cleared once at startup. A missing table (fresh install) is ignored.
+    """
     try:
         with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-            task_queue.ensure_schema(connection)
-            count = task_queue.requeue_stale_submitting(connection)
+            connection.execute("DELETE FROM workbench_queue")
+            connection.commit()
+    except sqlite3.OperationalError:
+        pass
     except Exception:
-        runtime_log.logger().exception("启动恢复队列失败")
-        return
-    if count:
-        runtime_log.logger().warning(
-            "启动恢复：%s 条队列项停在上次提交中，已重新排队", count
-        )
+        runtime_log.logger().exception("清空遗留队列表失败")
 
 
 @asynccontextmanager
@@ -423,13 +408,11 @@ async def lifespan(_app: FastAPI):
     _ensure_node_token()
     runtime_log.setup_logging(DATA_ROOT)
     runtime_log.logger().info("工作台后端启动（%s）", APP_VERSION)
-    _recover_orphan_queue_items()
-    queue_dispatcher.start()
+    _clear_deprecated_queue()
     try:
         yield
     finally:
         runtime_log.logger().info("工作台后端停止")
-        queue_dispatcher.stop()
 
 
 app = FastAPI(
@@ -1532,6 +1515,47 @@ def generation_history_list(
     return {"items": items}
 
 
+@app.post("/api/history/sync")
+def history_sync_canvas():
+    """Manually backfill generations queued directly in the ComfyUI canvas.
+
+    Reads ComfyUI's own ``/history`` (read-only), reverse-parses each stored
+    API workflow, and records entries absent from the local index. Ownership is
+    matched to an existing workflow by checkpoint/LoRA/resolution signatures;
+    unmatched entries stay unbound. Existing local rows are never overwritten.
+    """
+    settings = load_settings()
+    comfyui_url = settings["connections"]["comfyui_url"]
+    fetched = comfy_client.fetch_history_raw(comfyui_url)
+    if not fetched["online"]:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "online": False,
+                "error": fetched["error"] or "ComfyUI 不可达，未同步画布记录。",
+            },
+        )
+
+    store = WorkflowStore(DATA_ROOT / "workflows")
+    references: list[tuple[str, dict[str, Any]]] = []
+    for item in store.list_workflows():
+        workflow_id = item.get("id")
+        if not isinstance(workflow_id, str):
+            continue
+        try:
+            workflow = store.get_workflow(workflow_id)
+            references.append((workflow_id, workflow.get("report", {})))
+        except (WorkflowError, FileNotFoundError, OSError):
+            continue
+
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        generation_history.ensure_schema(connection)
+        result = history_sync.sync_from_history(
+            connection, fetched["history"], references
+        )
+    return result
+
+
 @app.get("/api/history/image")
 def history_image(filename: str, subfolder: str = ""):
     """Serve a recorded output image read-only from the configured output dir.
@@ -1562,6 +1586,35 @@ def generation_history_detail(prompt_id: str):
     store = WorkflowStore(DATA_ROOT / "workflows")
     record["linked_draft"] = store.find_linked_draft(
         record.get("workflow_id") or "", record.get("prompt_id") or ""
+    )
+    return record
+
+
+class HistoryRebind(BaseModel):
+    workflow_id: str = ""
+
+
+@app.post("/api/history/{prompt_id}/workflow")
+def history_rebind_workflow(prompt_id: str, payload: HistoryRebind):
+    """Reassign a history record to another workflow, or unbind it."""
+    target = (payload.workflow_id or "").strip()
+    store = WorkflowStore(DATA_ROOT / "workflows")
+    if target:
+        try:
+            store.get_workflow(target)
+        except (WorkflowError, FileNotFoundError, OSError):
+            raise HTTPException(status_code=404, detail="目标工作流不存在")
+    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
+        generation_history.ensure_schema(connection)
+        record = history_sync.rebind_workflow(connection, prompt_id, target)
+    if record is None:
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+    output_dir = load_settings().get("storage", {}).get("output", "")
+    record["images"] = generation_history.annotate_exists(
+        record.get("images") or [], output_dir
+    )
+    record["linked_draft"] = store.find_linked_draft(
+        record.get("workflow_id") or "", prompt_id
     )
     return record
 
@@ -2050,124 +2103,6 @@ def delete_prompt_profile(profile_id: str, payload: ProfileConfirm | None = None
         raise HTTPException(404, f"Profile not found: {profile_id}") from None
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-
-
-# ---- Local pending submission queue --------------------------------------
-
-def _queue_store() -> WorkflowStore:
-    return WorkflowStore(DATA_ROOT / "workflows")
-
-
-def _queue_public(item: dict[str, Any]) -> dict[str, Any]:
-    """Project a queue row for the API: expose only a snapshot flag, not the
-    frozen snapshot body (which can be large)."""
-    public = {key: value for key, value in item.items() if key != "prompt_snapshot"}
-    public["has_snapshot"] = item.get("prompt_snapshot") is not None
-    return public
-
-
-@app.get("/api/queue")
-def list_queue(workflow_id: str | None = None):
-    """List local pending/settled queue items, newest order by queue position."""
-    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-        task_queue.ensure_schema(connection)
-        items = [_queue_public(item) for item in task_queue.list_items(connection, workflow_id)]
-    return {"items": items, "global_paused": queue_dispatcher.is_global_paused()}
-
-
-@app.post("/api/queue")
-def enqueue_queue(payload: QueueEnqueue):
-    """Add a confirmed API-format workflow to the local pending queue.
-
-    Enqueueing only records an intent locally; it does not contact ComfyUI or
-    the LLM. The same format/whitelist preconditions as submission are checked
-    here so an unconfirmable workflow cannot enter the pending list.
-    """
-    try:
-        workflow = _queue_store().get_workflow(payload.workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    manifest = workflow.get("manifest", {})
-    if manifest.get("format") != "api":
-        raise HTTPException(
-            status_code=400,
-            detail="UI 格式工作流不能加入队列，请先在 ComfyUI 中导出 API 格式。",
-        )
-    if not manifest.get("confirmed"):
-        raise HTTPException(
-            status_code=400,
-            detail="请先确认 Prompt 节点白名单，再加入队列。",
-        )
-
-    name = str(manifest.get("filename") or payload.workflow_id)
-    # Freeze the confirmed working copy and Prompt list at enqueue time so a
-    # later edit to the working copy does not change what a queued item submits.
-    try:
-        working = _queue_store().read_working(payload.workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    snapshot = {
-        "working": working,
-        "prompts": workflow.get("working_prompts", []),
-    }
-    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-        task_queue.ensure_schema(connection)
-        created = task_queue.enqueue(
-            connection, payload.workflow_id, name, payload.note, snapshot
-        )
-    return _queue_public(created)
-
-
-@app.delete("/api/queue/{queue_id}")
-def cancel_queue_item(queue_id: str):
-    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-        task_queue.ensure_schema(connection)
-        item = task_queue.get_item(connection, queue_id)
-        if item is None or item["status"] == "cancelled":
-            raise HTTPException(status_code=404, detail="排队项不存在")
-        try:
-            task_queue.cancel_item(connection, queue_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"ok": True}
-
-
-@app.post("/api/queue/{queue_id}/pause")
-def pause_queue_item(queue_id: str, payload: QueueItemPause):
-    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-        task_queue.ensure_schema(connection)
-        item = task_queue.get_item(connection, queue_id)
-        if item is None or item["status"] == "cancelled":
-            raise HTTPException(status_code=404, detail="排队项不存在")
-        try:
-            updated = task_queue.set_paused(connection, queue_id, payload.paused)
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return updated
-
-
-@app.post("/api/queue/{queue_id}/move")
-def move_queue_item(queue_id: str, payload: QueueItemMove):
-    with model_identity.connect(datadir.database_path(DATA_ROOT)) as connection:
-        task_queue.ensure_schema(connection)
-        item = task_queue.get_item(connection, queue_id)
-        if item is None:
-            raise HTTPException(status_code=404, detail="排队项不存在")
-        if item["status"] in ("submitting", "submitted"):
-            raise HTTPException(status_code=409, detail="已提交的任务不能调整顺序。")
-        try:
-            items = task_queue.move_item(connection, queue_id, payload.direction)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": items}
-
-
-@app.post("/api/queue/pause-all")
-def pause_all_queue(payload: QueueGlobalPause):
-    """Hold/resume the whole local dispatcher without cancelling pending items."""
-    queue_dispatcher.set_global_paused(payload.paused)
-    return {"global_paused": payload.paused}
 
 
 # ---- Static frontend hosting (local Web runtime) ---------------------------

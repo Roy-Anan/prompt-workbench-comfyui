@@ -62,6 +62,15 @@ type ModelFileKey = "checkpoints" | "loras" | "vaes" | "clips";
 
 type LinkedDraft = { id: string; name: string };
 
+type WorkflowBrief = { id: string; filename: string };
+
+type SyncResult = {
+  added: number;
+  skipped: number;
+  matched: number;
+  unmatched: number;
+};
+
 type HistoryRecord = {
   kind?: "prompt";
   id?: string;
@@ -429,6 +438,12 @@ export default function HistoryPanel() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [workflowBriefs, setWorkflowBriefs] = useState<WorkflowBrief[]>([]);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
 
   function openLightbox(images: HistoryImage[], index: number) {
     setLightbox({ images, index });
@@ -495,6 +510,13 @@ export default function HistoryPanel() {
       }>(`/api/history/all?kind=${kindFilter}`);
       setItems(body.items);
       setCounts(body.counts);
+      try {
+        const wfBody = await apiGet<{ items: WorkflowBrief[] }>("/api/workflows");
+        setWorkflowBriefs(wfBody.items ?? []);
+      } catch {
+        // Workflow list is only used for the rebind dropdown; keep history intact.
+        setWorkflowBriefs([]);
+      }
       let jump: string | null = null;
       try {
         jump = localStorage.getItem("workbench.jumpHistory");
@@ -602,6 +624,46 @@ export default function HistoryPanel() {
     }
   }
 
+  async function syncCanvas() {
+    if (syncBusy) return;
+    setSyncBusy(true);
+    setSyncMessage(null);
+    try {
+      const result = await apiPost<SyncResult>("/api/history/sync", {});
+      setSyncMessage({
+        kind: "ok",
+        text: `同步完成：新增 ${result.added} 条（归属 ${result.matched}，未归属 ${result.unmatched}，已存在跳过 ${result.skipped}）。`,
+      });
+      await load();
+    } catch (err) {
+      setSyncMessage({ kind: "err", text: `同步画布记录失败：${String(err)}` });
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function rebindRecord(record: HistoryRecord, targetId: string) {
+    try {
+      await apiPost(`/api/history/${record.prompt_id}/workflow`, {
+        workflow_id: targetId,
+      });
+      setItems((prev) =>
+        (prev || []).map((entry) =>
+          isPromptRecord(entry) && entry.prompt_id === record.prompt_id
+            ? { ...entry, workflow_id: targetId }
+            : entry,
+        ),
+      );
+    } catch (err) {
+      setError(`改挂工作流失败：${String(err)}`);
+    }
+  }
+
+  function workflowLabel(id: string): string {
+    const brief = workflowBriefs.find((item) => item.id === id);
+    return brief ? brief.filename : id.slice(0, 8);
+  }
+
   function goToWorkbench() {
     window.dispatchEvent(
       new CustomEvent("workbench:navigate", { detail: { page: "workflows" } }),
@@ -610,13 +672,7 @@ export default function HistoryPanel() {
 
   const showPromptFilters = kindFilter === "all" || kindFilter === "prompt";
 
-  const workflowOptions = Array.from(
-    new Set(
-      (items || [])
-        .filter(isPromptRecord)
-        .map((record) => record.workflow_id),
-    ),
-  );
+  const workflowOptions = workflowBriefs.map((brief) => brief.id);
 
   function haystackOf(record: AggregateRecord): string {
     if (isPromptRecord(record)) {
@@ -844,7 +900,8 @@ function renderRecord(record: AggregateRecord) {
       <div className="rule-row-main">
         <strong>{summarize(record.positive_prompt)}</strong>
         <small>
-          {formatTime(record.created_at)} · 工作流 {record.workflow_id.slice(0, 8)}
+          {formatTime(record.created_at)} ·{" "}
+          {record.workflow_id ? `工作流 ${workflowLabel(record.workflow_id)}` : "画布直接生成"}
           {checkpoints.length > 0 && ` · ${checkpoints.join("、")}`}
           {loras.length > 0 && ` · LoRA ${loras.join("、")}`}
         </small>
@@ -903,6 +960,22 @@ function renderRecord(record: AggregateRecord) {
                     `采样器：${samplerSummary(record.model_snapshot.samplers)}`,
                   ].join(" · ")}
                 </small>
+              </div>
+            </div>
+            <div className="rule-row">
+              <div className="rule-row-main">
+                <strong>归属工作流</strong>
+                <select
+                  value={record.workflow_id}
+                  onChange={(event) => void rebindRecord(record, event.target.value)}
+                >
+                  <option value="">画布直接生成（不归属）</option>
+                  {workflowBriefs.map((brief) => (
+                    <option key={brief.id} value={brief.id}>
+                      {brief.filename}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             {record.linked_draft && (
@@ -1031,11 +1104,20 @@ function renderRecord(record: AggregateRecord) {
           <button onClick={exportHistory} disabled={filtered.length === 0}>
             导出 JSON
           </button>
+          <button onClick={() => void syncCanvas()} disabled={syncBusy}>
+            {syncBusy ? "同步中…" : "同步画布记录"}
+          </button>
           <button onClick={() => void load()} disabled={items === null}>
             刷新
           </button>
         </div>
       </div>
+
+      {syncMessage && (
+        <p className={syncMessage.kind === "ok" ? "workflow-meta" : "workflow-warning"}>
+          {syncMessage.text}
+        </p>
+      )}
 
       <div className="history-kind-chips">
         {KIND_OPTIONS.map((option) => {
@@ -1091,7 +1173,7 @@ function renderRecord(record: AggregateRecord) {
                 <option value="">全部</option>
                 {workflowOptions.map((workflowId) => (
                   <option key={workflowId} value={workflowId}>
-                    {workflowId.slice(0, 8)}
+                    {workflowLabel(workflowId)}
                   </option>
                 ))}
               </select>

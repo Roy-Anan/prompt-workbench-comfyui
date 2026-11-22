@@ -180,81 +180,9 @@ def test_prompt_write_changes_only_confirmed_text_fields(tmp_path):
     assert working["6"]["inputs"]["cfg"] == 6.5
     assert working["5"] == original["5"]
     assert working["4"] == original["4"]
-    versions = (
-        tmp_path / "workflows" / workflow_id / "versions"
-    )
-    assert versions.is_dir()
-    assert list(versions.glob("*.json"))
-
-
-def test_list_versions_returns_saved_snapshots_newest_first(tmp_path):
-    store = WorkflowStore(tmp_path / "workflows")
-    imported = store.import_workflow("sample_api.json", sample_api_workflow())
-    workflow_id = imported["id"]
-    store.confirm_prompt_nodes(
-        workflow_id,
-        positive_node_ids=["1"],
-        negative_node_ids=["2"],
-    )
-
-    store.write_prompts(
-        workflow_id,
-        positive_text="v1 positive",
-        negative_text="v1 negative",
-    )
-    store.write_prompts(
-        workflow_id,
-        positive_text="v2 positive",
-        negative_text="v2 negative",
-    )
-
-    entries = store.list_versions(workflow_id)
-    assert len(entries) == 2
-    first = {p["role"]: p["text"] for p in entries[0]["prompts"]}
-    second = {p["role"]: p["text"] for p in entries[1]["prompts"]}
-    assert first["positive"] == "v1 positive"
-    assert first["negative"] == "v1 negative"
-    assert second["positive"] == "old positive"
-    assert second["negative"] == "old negative"
-    assert entries[0]["stamp"] and entries[1]["stamp"]
-
-
-def test_restore_version_writes_back_snapshot_and_creates_new_snapshot(tmp_path):
-    store = WorkflowStore(tmp_path / "workflows")
-    imported = store.import_workflow("sample_api.json", sample_api_workflow())
-    workflow_id = imported["id"]
-    store.confirm_prompt_nodes(
-        workflow_id,
-        positive_node_ids=["1"],
-        negative_node_ids=["2"],
-    )
-
-    store.write_prompts(
-        workflow_id,
-        positive_text="v1 positive",
-        negative_text="v1 negative",
-    )
-    store.write_prompts(
-        workflow_id,
-        positive_text="v2 positive",
-        negative_text="v2 negative",
-    )
-
-    entries = store.list_versions(workflow_id)
-    v1_stamp = entries[0]["stamp"]  # v1 snapshot, newest before restore
-
-    restored = store.restore_version(workflow_id, v1_stamp)
-    working = {p["role"]: p["text"] for p in restored["workflow"]["working_prompts"]}
-    assert working["positive"] == "v1 positive"
-    assert working["negative"] == "v1 negative"
-
-    # Restoring first snapshots the current v2 working copy as a new version.
-    versions_dir = tmp_path / "workflows" / workflow_id / "versions"
-    assert len(list(versions_dir.glob("*.json"))) == 3
-    after = store.list_versions(workflow_id)
-    newest = {p["role"]: p["text"] for p in after[0]["prompts"]}
-    assert newest["positive"] == "v2 positive"
-    assert newest["negative"] == "v2 negative"
+    # New writes no longer auto-create version snapshots.
+    versions = tmp_path / "workflows" / workflow_id / "versions"
+    assert list(versions.glob("*.json")) == []
 
 
 def test_restore_version_rejects_missing_snapshot(tmp_path):
@@ -500,39 +428,6 @@ def test_passthrough_conditioning_node_trace_continues_upstream():
         for item in report["prompt_nodes"]
     }
     assert "positive" in roles["1"]
-def test_version_snapshot_keeps_previous_prompt_text(tmp_path):
-    store = WorkflowStore(tmp_path / "workflows")
-    imported = store.import_workflow("sample_api.json", sample_api_workflow())
-    workflow_id = imported["id"]
-    store.confirm_prompt_nodes(
-        workflow_id,
-        positive_node_ids=["1"],
-        negative_node_ids=["2"],
-    )
-    store.write_prompts(
-        workflow_id,
-        positive_text="first positive",
-        negative_text="first negative",
-    )
-    store.write_prompts(
-        workflow_id,
-        positive_text="second positive",
-        negative_text="second negative",
-    )
-    versions_dir = tmp_path / "workflows" / workflow_id / "versions"
-    snapshots = sorted(versions_dir.glob("*.json"))
-    assert len(snapshots) == 2
-    first_snapshot = json.loads(
-        snapshots[0].read_text(encoding="utf-8")
-    )
-    # 第一份快照必须保存第一次写入前的原始旧文本，而不是第二次写入后的新文本。
-    assert first_snapshot["1"]["inputs"]["text"] == "old positive"
-    assert first_snapshot["2"]["inputs"]["text"] == "old negative"
-    second_snapshot = json.loads(
-        snapshots[1].read_text(encoding="utf-8")
-    )
-    assert second_snapshot["1"]["inputs"]["text"] == "first positive"
-    assert second_snapshot["2"]["inputs"]["text"] == "first negative"
 def test_reimport_and_reopen_persists_across_store_instances(tmp_path):
     data_root = tmp_path / "workflows"
     first_store = WorkflowStore(data_root)
@@ -677,7 +572,7 @@ def test_real_exported_api_workflow_full_writeback_roundtrip(tmp_path):
     assert persisted["4"] == "suyuexi, 1girl, new positive"
     assert persisted["5"] == "cartoon, anime, new negative"
 
-    # 原始文件未被改动；写入前快照与原始一致。
+    # 原始文件未被改动；新写入不再自动留存版本快照。
     original = json.loads(
         (tmp_path / "workflows" / imported["id"] / "original.json")
         .read_text(encoding="utf-8")
@@ -686,9 +581,7 @@ def test_real_exported_api_workflow_full_writeback_roundtrip(tmp_path):
     versions = list(
         (tmp_path / "workflows" / imported["id"] / "versions").glob("*.json")
     )
-    assert len(versions) == 1
-    snapshot = json.loads(versions[0].read_text(encoding="utf-8"))
-    assert snapshot == source
+    assert versions == []
 
 
 def test_draft_create_list_read_does_not_touch_working(tmp_path):
@@ -935,6 +828,11 @@ def test_draft_source_history_link_and_lookup(tmp_path):
     linked = store.find_linked_draft(workflow_id, "pid-abc-123")
     assert linked == {"id": draft["id"], "name": "索引草稿"}
     assert store.find_linked_draft(workflow_id, "pid-unknown") is None
+
+    # An unbound record (empty workflow_id, e.g. canvas-direct generation)
+    # has no draft folder to resolve; it links to nothing instead of raising.
+    assert store.find_linked_draft("", "pid-abc-123") is None
+    assert store.find_linked_draft("   ", "pid-abc-123") is None
 
     # Non-string / blank source refs normalize back to None.
     plain = store.save_draft(

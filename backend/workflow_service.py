@@ -957,11 +957,32 @@ class WorkflowStore:
             "working_fingerprint": fingerprint(working),
         }
     def read_working(self, workflow_id: str) -> dict[str, Any]:
-        """Return the raw working-copy workflow dict for submission."""
+        """Return the raw working-copy workflow dict for canvas export."""
         folder = self._folder(workflow_id)
         if not folder.is_dir():
             raise FileNotFoundError("工作流不存在")
         return _read_json(folder / "working.json")
+
+    def reset_working_prompts(self, workflow_id: str) -> dict[str, Any]:
+        """Restore the working copy to the imported original.
+
+        Drops any prompt text written this session while keeping the node
+        structure intact. This is the manual "clear working copy" action after
+        the workflow has been exported to the ComfyUI canvas.
+        """
+        folder = self._folder(workflow_id)
+        if not folder.is_dir():
+            raise FileNotFoundError("工作流不存在")
+        manifest = _read_json(folder / "manifest.json")
+        if manifest.get("format") != "api":
+            raise WorkflowError("UI workflow 当前不支持清空工作副本")
+        original = _read_json(folder / "original.json")
+        restored = copy.deepcopy(original)
+        _atomic_json(folder / "working.json", restored)
+        manifest["working_fingerprint"] = fingerprint(restored)
+        manifest["last_written_at"] = _now()
+        _atomic_json(folder / "manifest.json", manifest)
+        return self.get_workflow(workflow_id)
 
     def list_versions(self, workflow_id: str) -> list[dict[str, Any]]:
         """List saved pre-write snapshots under ``versions/``, newest first.
@@ -1008,9 +1029,9 @@ class WorkflowStore:
         """Restore whitelist Prompt texts from a saved pre-write snapshot.
 
         The snapshot is read-only source: its whitelist texts are written back
-        through the same guarded ``write_prompts`` path, which first saves the
-        current working copy as a new version snapshot (restoring an old
-        version therefore produces a new version, per the M5 acceptance).
+        through the same guarded ``write_prompts`` path. New workflows no longer
+        auto-create version snapshots; this path only restores snapshots that
+        already exist in legacy data.
         Missing/corrupt snapshots, non-API workflows, unconfirmed whitelist
         and source-fingerprint drift all fail closed; no draft or multi-draft
         model is introduced here.
@@ -1220,14 +1241,8 @@ class WorkflowStore:
             raise WorkflowError(
                 "写入后完整性校验失败，工作副本未更新"
             )
-        # 保存真正的写入前版本，而不是已经修改的新版本。
-        versions = folder / "versions"
-        versions.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime(
-            "%Y%m%d-%H%M%S-%f"
-        )
-        _atomic_json(versions / f"{stamp}.json", working)
-        # 只有所有验证完成后才替换工作副本。
+        # 只有所有验证完成后才替换工作副本。写回前版本快照已退役：
+        # 工作副本用完由用户手动清空回退，不再自动留存 versions 快照。
         _atomic_json(folder / "working.json", updated)
         manifest["working_fingerprint"] = fingerprint(updated)
         manifest["last_written_at"] = _now()
@@ -1485,7 +1500,13 @@ class WorkflowStore:
     def find_linked_draft(
         self, workflow_id: str, source_history_id: str
     ) -> dict[str, Any] | None:
-        """Return the active draft linked to one history record, if any."""
+        """Return the active draft linked to one history record, if any.
+
+        An unbound record (``workflow_id`` empty, e.g. a canvas-direct
+        generation) has no draft folder to resolve, so it links to nothing.
+        """
+        if not str(workflow_id or "").strip():
+            return None
         ref = _clean_source_ref(source_history_id)
         if not ref:
             return None

@@ -1,14 +1,12 @@
 from __future__ import annotations
 import re
 import sqlite3
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field, field_validator
 import comfy_client
-import comfy_tasks
 import datadir
 import generation_history
 import llm_client
@@ -158,10 +156,6 @@ class PromptCandidateRequest(BaseModel):
 class TagRename(BaseModel):
     old_tag: str = Field(min_length=1, max_length=30)
     new_tag: str = Field(min_length=1, max_length=30)
-
-
-class TaskSubmitPayload(BaseModel):
-    draft_id: str | None = None
 
 
 class DraftSave(BaseModel):
@@ -607,6 +601,34 @@ def write_prompts(workflow_id: str, payload: PromptWrite):
         _raise_api_error(exc)
 
 
+@router.get("/{workflow_id}/export")
+def export_workflow(workflow_id: str):
+    """Return the working API-format workflow for download to the canvas.
+
+    The workbench no longer submits prompts itself; this hands the edited
+    workflow over so the user can drag it into the ComfyUI canvas and queue it
+    there. Only the API-format dict and a suggested file name are returned.
+    """
+    try:
+        workflow = store().get_workflow(workflow_id)
+        working = store().read_working(workflow_id)
+    except (WorkflowError, FileNotFoundError, OSError) as exc:
+        _raise_api_error(exc)
+    manifest = workflow.get("manifest", {})
+    filename = str(manifest.get("filename") or workflow_id)
+    stem = Path(filename).stem or workflow_id
+    return {"filename": f"{stem}.json", "workflow": working}
+
+
+@router.post("/{workflow_id}/reset")
+def reset_workflow_copy(workflow_id: str):
+    """Clear prompt text written to the working copy, restore the original."""
+    try:
+        return store().reset_working_prompts(workflow_id)
+    except (WorkflowError, FileNotFoundError, OSError) as exc:
+        _raise_api_error(exc)
+
+
 @router.get("/{workflow_id}/rules")
 def workflow_rule_context(workflow_id: str):
     """Return only the rules relevant to this workflow's checkpoint context.
@@ -901,151 +923,6 @@ def prompt_candidates(workflow_id: str, payload: PromptCandidateRequest):
 
 
 
-def _submit_guarded(
-    workflow_id: str,
-    snapshot: dict[str, Any] | None = None,
-    draft_id: str | None = None,
-) -> dict[str, Any]:
-    """Shared fail-closed submission gate used by first submit and manual retry.
-
-    The submission fails closed: ComfyUI must be reachable, the workflow must
-    already be in API format, the Prompt-node whitelist must be confirmed, and
-    the local LLM must be confirmed unloaded. If the Ollama process is not
-    running (connection refused), no local LLM can be resident, so it is
-    treated as clear; only a reachable-but-malformed service or a model still
-    listed in `/api/ps` fails closed. UI-format workflows cannot be converted
-    here and are rejected. A failed submit records no local task; retries are
-    manual.
-    """
-    try:
-        workflow = store().get_workflow(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        _raise_api_error(exc)
-
-    manifest = workflow.get("manifest", {})
-    if manifest.get("format") != "api":
-        raise HTTPException(
-            status_code=400,
-            detail="UI 格式工作流不能直接提交，请先在 ComfyUI 中导出 API 格式。",
-        )
-    if not manifest.get("confirmed"):
-        raise HTTPException(
-            status_code=400,
-            detail="请先确认 Prompt 节点白名单，再提交任务。",
-        )
-
-    comfyui_url = _comfyui_url()
-    ollama_url = _ollama_url()
-
-    if not comfy_client.comfyui_online(comfyui_url):
-        raise HTTPException(
-            status_code=502,
-            detail={"online": False, "error": "ComfyUI 不可达，未提交任务。"},
-        )
-
-    # Best-effort: unload resident LLM and ComfyUI models before the
-    # fail-closed gates re-probe. Per-target failures do not block here;
-    # the VRAM and LLM-resident checks below still reject if memory stays
-    # tight or an LLM remains resident.
-    comfy_client.release_resources(ollama_url, comfyui_url)
-
-    vram = comfy_client.probe_vram_free(comfyui_url)
-    if not vram["online"] or vram["vram_free"] is None:
-        if vram.get("reachable"):
-            vram_error = (
-                "ComfyUI 在线但显存接口异常（可能显存不足或进程卡死），"
-                "未提交任务；建议重启 ComfyUI 后再试。"
-            )
-        else:
-            vram_error = "无法确认显存空闲（ComfyUI 未启动或不可达），未提交任务。"
-        raise HTTPException(
-            status_code=502,
-            detail={"online": False, "reachable": vram.get("reachable"), "error": vram_error},
-        )
-    try:
-        working_preview = store().read_working(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError):
-        working_preview = {}
-    vram_required = comfy_client.min_vram_required(working_preview)
-    if vram["vram_free"] < vram_required:
-        free_gb = vram["vram_free"] / 1024 ** 3
-        need_gb = vram_required / 1024 ** 3
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "online": True,
-                "vram_free": vram["vram_free"],
-                "error": f"显存空闲不足 {need_gb:.0f}GB（当前约 {free_gb:.1f}GB），请释放显存后再提交。",
-            },
-        )
-
-    loaded = comfy_client.loaded_ollama_models(ollama_url)
-    if not loaded["reachable"]:
-        # Connection refused: the local Ollama process is not running, so no
-        # local LLM can be resident in VRAM. Treat this as "no resident LLM"
-        # rather than failing closed on an unknown.
-        pass
-    elif not loaded["online"]:
-        raise HTTPException(
-            status_code=502,
-            detail={"online": False, "error": "无法确认本地 LLM 已卸载（Ollama 响应异常），未提交任务。"},
-        )
-    elif loaded["models"]:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "online": True,
-                "loaded": loaded["models"],
-                "error": "本地 LLM 仍驻留显存，请先卸载后再提交。",
-            },
-        )
-
-    if snapshot is not None:
-        frozen_working = snapshot.get("working")
-        frozen_prompts = snapshot.get("prompts", [])
-        if not isinstance(frozen_working, dict):
-            raise HTTPException(
-                status_code=400,
-                detail="队列快照损坏，未提交任务；请重新加入队列。",
-            )
-        working = frozen_working
-        prompts = frozen_prompts
-    else:
-        working = store().read_working(workflow_id)
-        prompts = workflow.get("working_prompts", [])
-    client_id = str(uuid.uuid4())
-    result = comfy_client.submit_prompt(comfyui_url, working, client_id)
-    if not result["ok"]:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "online": True,
-                "error": result["error"],
-                "node_errors": result["node_errors"],
-            },
-        )
-
-    with model_identity.connect(_database_path()) as connection:
-        comfy_tasks.ensure_schema(connection)
-        generation_history.ensure_schema(connection)
-        record = comfy_tasks.record_submission(
-            connection,
-            result["prompt_id"],
-            workflow_id,
-            result["node_errors"],
-        )
-        generation_history.record_snapshot(
-            connection,
-            result["prompt_id"],
-            workflow_id,
-            prompts,
-            workflow.get("report", {}),
-            "submitted",
-            draft_id,
-        )
-    return record
-
-
 @system_router.post("/release-vram")
 def release_vram():
     """Manually unload resident Ollama models and free ComfyUI model VRAM.
@@ -1054,206 +931,6 @@ def release_vram():
     unreachable target.
     """
     return comfy_client.release_resources(_ollama_url(), _comfyui_url())
-
-
-@router.post("/{workflow_id}/tasks")
-def submit_task(
-    workflow_id: str,
-    payload: TaskSubmitPayload | None = Body(default=None),
-):
-    """Submit the working API-format workflow to local ComfyUI, guarded.
-
-    An optional ``draft_id`` records the draft the submission was based on so
-    its output images can be shown back in the draft box.
-    """
-    draft_id = payload.draft_id if payload else None
-    return _submit_guarded(workflow_id, draft_id=draft_id)
-
-
-@router.post("/{workflow_id}/tasks/{prompt_id}/retry")
-def retry_task(workflow_id: str, prompt_id: str):
-    """Manually resubmit a failed or interrupted task through the same gate.
-
-    Only ``failed`` and ``interrupted`` records may be retried; succeeded,
-    in-flight and unknown tasks are refused. The old record and its history
-    snapshot are kept; a retry creates a new prompt_id and a fresh snapshot.
-    The gate fails closed exactly like the first submission; a remote failure
-    leaves the old record untouched and does not auto-retry.
-    """
-    try:
-        store().get_workflow(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        _raise_api_error(exc)
-
-    with model_identity.connect(_database_path()) as connection:
-        comfy_tasks.ensure_schema(connection)
-        record = comfy_tasks.get_by_prompt_id(connection, prompt_id)
-        if record is None or record["workflow_id"] != workflow_id:
-            raise HTTPException(status_code=404, detail="任务不存在")
-        status = record["status"]
-        if status not in ("failed", "interrupted"):
-            raise HTTPException(
-                status_code=409,
-                detail=f"任务状态为 {status}，仅失败或已中断的任务可手动重试。",
-            )
-        history_record = generation_history.get_by_prompt_id(connection, prompt_id)
-        inherited_draft = (
-            history_record.get("draft_id") if history_record else None
-        )
-
-    return _submit_guarded(workflow_id, draft_id=inherited_draft)
-
-
-@router.get("/{workflow_id}/tasks")
-def list_tasks(workflow_id: str, refresh: bool = False):
-    """Return locally recorded tasks for this workflow, newest first.
-
-    With ``refresh=true`` the queue and history are read back and local
-    statuses reconciled conservatively: a task absent from both queue and
-    history while still pending/running is marked ``unknown``, never failed
-    automatically. No task is resubmitted from this endpoint.
-    """
-    try:
-        store().get_workflow(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        _raise_api_error(exc)
-
-    with model_identity.connect(_database_path()) as connection:
-        comfy_tasks.ensure_schema(connection)
-        generation_history.ensure_schema(connection)
-        items = comfy_tasks.list_for_workflow(connection, workflow_id)
-        sync_error: str | None = None
-
-        if refresh:
-            states = comfy_client.fetch_task_states(_comfyui_url())
-            if not states["online"]:
-                sync_error = states["error"]
-            else:
-                now = datetime.now(timezone.utc)
-                for record in items:
-                    pid = record["prompt_id"]
-                    if pid in states["running"]:
-                        if comfy_tasks.is_stalled(record, now):
-                            stalled_msg = (
-                                "任务长时间停留在运行中，可能显存不足或采样卡死；"
-                                "建议中断后重启 ComfyUI 再重试。"
-                            )
-                            comfy_tasks.update_status(
-                                connection, pid, "failed", last_error=stalled_msg
-                            )
-                            generation_history.update_task_status(
-                                connection, pid, "failed", last_error=stalled_msg
-                            )
-                        else:
-                            comfy_tasks.update_status(connection, pid, "running")
-                            generation_history.update_task_status(connection, pid, "running")
-                    elif pid in states["pending"]:
-                        comfy_tasks.update_status(connection, pid, "submitted")
-                        generation_history.update_task_status(connection, pid, "submitted")
-                    elif pid in states["history"]:
-                        entry = states["history"][pid]
-                        status = comfy_tasks.classify_history_status(
-                            entry.get("status_str"),
-                            entry.get("completed"),
-                        )
-                        comfy_tasks.update_status(
-                            connection,
-                            pid,
-                            status,
-                            outputs=entry.get("outputs"),
-                        )
-                        generation_history.update_task_status(connection, pid, status)
-                        if status == "succeeded":
-                            images = generation_history.extract_images(
-                                entry.get("outputs")
-                            )
-                            generation_history.attach_images(connection, pid, images)
-                    elif record["status"] in ("submitted", "running", "unknown"):
-                        if comfy_tasks.is_stalled(record, now):
-                            stalled_msg = (
-                                "任务长时间未完成且不在队列/历史中，可能显存不足或进程卡死；"
-                                "建议重启 ComfyUI 后重试。"
-                            )
-                            comfy_tasks.update_status(
-                                connection, pid, "failed", last_error=stalled_msg
-                            )
-                            generation_history.update_task_status(
-                                connection, pid, "failed", last_error=stalled_msg
-                            )
-                        else:
-                            comfy_tasks.update_status(
-                                connection,
-                                pid,
-                                "unknown",
-                                last_error="队列与历史均未找到该任务",
-                            )
-                            generation_history.update_task_status(
-                                connection,
-                                pid,
-                                "unknown",
-                                last_error="队列与历史均未找到该任务",
-                            )
-                items = comfy_tasks.list_for_workflow(connection, workflow_id)
-
-        return {"items": items, "sync_error": sync_error}
-
-
-@router.post("/{workflow_id}/tasks/{prompt_id}/cancel")
-def cancel_task(workflow_id: str, prompt_id: str):
-    """Cancel a pending task or interrupt a running task for this workflow.
-
-    Routing follows the locally recorded status: ``submitted`` is dequeued via
-    ``/queue`` delete, ``running`` is interrupted via ``/interrupt``. Terminal
-    and ``unknown`` tasks are refused rather than guessed at. A failed remote
-    call leaves the local record untouched; nothing is retried automatically.
-    """
-    try:
-        store().get_workflow(workflow_id)
-    except (WorkflowError, FileNotFoundError, OSError) as exc:
-        _raise_api_error(exc)
-
-    with model_identity.connect(_database_path()) as connection:
-        comfy_tasks.ensure_schema(connection)
-        record = comfy_tasks.get_by_prompt_id(connection, prompt_id)
-        if record is None or record["workflow_id"] != workflow_id:
-            raise HTTPException(status_code=404, detail="任务不存在")
-
-        status = record["status"]
-        if status in ("succeeded", "failed", "interrupted"):
-            raise HTTPException(
-                status_code=409,
-                detail=f"任务已是终态（{status}），不能取消或中断。",
-            )
-        if status == "unknown":
-            raise HTTPException(
-                status_code=409,
-                detail="任务状态未知，请先刷新校准后再操作。",
-            )
-
-        if not comfy_client.comfyui_online(_comfyui_url()):
-            raise HTTPException(
-                status_code=502,
-                detail={"online": False, "error": "ComfyUI 不可达，未执行取消/中断。"},
-            )
-
-        if status == "running":
-            result = comfy_client.interrupt_running(_comfyui_url(), prompt_id)
-        else:
-            result = comfy_client.cancel_pending(_comfyui_url(), prompt_id)
-
-        if not result["ok"]:
-            raise HTTPException(
-                status_code=502,
-                detail={"online": True, "error": result["error"]},
-            )
-
-        comfy_tasks.update_status(
-            connection,
-            prompt_id,
-            "interrupted",
-            last_error="已手动取消/中断",
-        )
-        return comfy_tasks.get_by_prompt_id(connection, prompt_id)
 
 
 @router.get("/{workflow_id}/rules/compare")

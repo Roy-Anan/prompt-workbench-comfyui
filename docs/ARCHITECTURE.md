@@ -126,9 +126,9 @@
 -   rules：模型身份、规则导入、三级继承、优先级、冲突检测和动态检索。
 -   prompt：创作任务构造、候选校验、翻译、区块、语法和 Token 检查。
 -   adapters/ollama：模型发现、生成、停止、卸载和状态验证。
--   adapters/comfyui：连接、HTTP API、WebSocket、状态校准和任务提交。
+-   adapters/comfyui：连接、HTTP API、历史/队列状态只读探测（R162 起任务提交、WebSocket 进度订阅与状态校准已退役）。
 -   adapters/gpu：显存与进程状态采集；能力不足必须报告 unknown。
--   queue：先进先出、暂停/恢复、取消、重试和崩溃恢复。
+-   queue：R162 起本地排队层与调度已退役，`task_queue.py` 仅留表结构定义，运行时无 import；下列先进先出/暂停恢复/取消/重试/崩溃恢复为历史规划留档。
 -   loras：元数据读取、角色卡、组合与工作流联动。
 -   drafts：手动保存、版本历史、回收站和模型快照。
 -   history：生成记录、文件路径状态、筛选和导出。
@@ -158,6 +158,8 @@
 
 ## 6. 核心安全管线
 
+> R162 起：第 1–9 步（解析、白名单、规则匹配、候选围栏、确认写入、深拷贝、非白名单差异拒绝、回读校验）仍为现行口径；第 10–12 步（入队前 LLM/显存闸门、调用 ComfyUI 提交接口、WebSocket/HTTP 状态校准）已随代提交链路退役。
+
 1.  读取原始 workflow，不修改源文件。
 2.  将 UI workflow 解析/转换为内部只读模型；提交前使用 API workflow。
 3.  为当前工作流建立内容指纹和 Prompt 节点白名单。
@@ -174,16 +176,20 @@
 
 ## 7. ComfyUI 集成
 
+> R162（2026-11-22）口径：工作台不代提交出图。只把确认提示词写进工作副本，导出 API JSON 由用户拖入画布排队；画布原生出图经 `POST /api/history/sync` 手动拉 `/history` 反解补录，可自动归属或手动改挂。下列 HTTP 提交、WebSocket 监听、中断/重试为历史规划留档。
+
 -   第一版只支持一个 ComfyUI 实例，但地址、端口可配置。
--   使用 HTTP 接口提交 API workflow，接收 prompt_id。
--   使用 WebSocket 监听执行事件；通过 queue/history/status 接口校准。
--   支持断线重连、状态恢复、明确中断和手动重试。
+-   历史规划：使用 HTTP 接口提交 API workflow，接收 prompt_id。
+-   历史规划：使用 WebSocket 监听执行事件；通过 queue/history/status 接口校准。
+-   历史规划：支持断线重连、状态恢复、明确中断和手动重试。
 -   ComfyUI 输出图片由 ComfyUI
     保存；工作台记录文件名、子目录、类型和解析后的路径。
 -   输出目录从配置或 ComfyUI 返回数据确定，不写死某台电脑的路径。
 -   工作台关闭不主动终止 ComfyUI 任务。
 
 ## 8. LLM 与显存策略
+
+> R162 起：出图前强制 LLM 卸载/显存阈值闸门已退役，降级为只读状态展示 + 手动释放按钮；实际显存/LLM 占用由用户在画布出图前自行确认。下列 fail-closed 拦截与三态校验为历史规划留档。
 
 -   通过统一 LLM Runtime 接口隔离 Ollama
     细节，未来可扩展其他本地运行时。
