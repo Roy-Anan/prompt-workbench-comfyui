@@ -129,6 +129,14 @@ CANDIDATE_MODES: dict[str, dict[str, str]] = {
         "label": "中英对照",
         "instruction": "请在现有内容基础上给出中英对照版本，保留语义与已规定参数；未提供的参数不要臆造。",
     },
+    "continue": {
+        "label": "续写",
+        "instruction": "请在现有内容基础上继续延展补充，承接已有主体、设定与方向往下写，不推翻已有内容；未提供的参数不要臆造。",
+    },
+    "fresh": {
+        "label": "空白直出",
+        "instruction": "忽略上面给出的现有 Prompt，仅依据规则与任务要求从零生成一份全新的 Prompt；未提供的参数不要臆造。",
+    },
     "negative": {
         "label": "负向补全",
         "instruction": "请基于现有负向提示词补全/优化负向 Prompt，描述需要排除的负面特征；不要改写正向内容，未提供的参数不要臆造。",
@@ -372,7 +380,9 @@ def _user_message(
         by_role["negative"].append(negative_in.strip())
 
     lines: list[str] = []
-    if by_role["positive"] or by_role["negative"]:
+    # 空白直出模式不携带现有 Prompt，只按规则与任务要求从零生成。
+    include_existing = mode != "fresh"
+    if include_existing and (by_role["positive"] or by_role["negative"]):
         lines.append("当前工作流现有 Prompt：")
         if by_role["positive"]:
             lines.append("正向：" + " / ".join(by_role["positive"]))

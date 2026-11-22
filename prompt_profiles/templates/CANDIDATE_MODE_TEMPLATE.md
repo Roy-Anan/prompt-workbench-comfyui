@@ -16,6 +16,8 @@
 | `draft` | 起草 / 起草补全 | 提示词工作区、写作助手、扩展节点 | 基于规则与现有内容补全候选，不臆造参数 |
 | `polish` | 润色 | 同上 | 在现有内容上润色措辞，保持事实与已规定参数不变 |
 | `trim` | 精简 | 同上 | 去重复冗余，保留核心主体 / 构图 / 已规定参数 |
+| `continue` | 续写 | 同上 | 在现有内容上向后延展补充，承接已有主体与设定，不推翻已有内容 |
+| `fresh` | 空白直出 | 同上 | 忽略现有 Prompt，仅按规则与任务从零生成；后端 `_user_message` 直接跳过现有内容段 |
 | `bilingual` | 中英对照 | 同上 | 给出中英对照版本，保留语义与已规定参数 |
 | `negative` | 负向词 / 负向补全 | 仅提示词工作区、扩展节点 | 补全 / 优化负向词，不改写正向内容 |
 | `none` | 无 | 扩展节点保留项 | 不附加模式指令（裸模式），不要删 |
@@ -60,18 +62,23 @@
 `comfyui_extension/workbench/candidate_node.py`：在 `MODES` 列表加 value，在 `MODE_LABELS` 字典加中文 label：
 
 ```python
-MODES = ["draft", "polish", "trim", "bilingual", "negative", "none", "expand"]
+MODES = ["draft", "polish", "trim", "continue", "fresh", "bilingual", "negative", "none"]
 
 MODE_LABELS = {
     "draft": "起草补全",
     "polish": "润色",
     "trim": "精简",
+    "continue": "续写",
+    "fresh": "空白直出",
     "bilingual": "中英对照",
     "negative": "负向补全",
     "none": "无",
-    "expand": "扩写",
 }
 ```
+
+### 3.5 需要行为分支的模式（少数）
+
+绝大多数模式只靠 instruction 一句话引导即可，消息拼装不用动。若新模式要求**不参考现有内容**（如 `fresh` 空白直出），还要在 `backend/workflow_api.py` 的 `_user_message` 里按模式跳过「当前工作流现有 Prompt」段；必保术语 / 锁定片段属于约束而非现有内容，仍然保留。判断标准：只改指令引导不动拼装，还是连现有内容段一起跳过。
 
 ## 4. 命名与口径约定
 

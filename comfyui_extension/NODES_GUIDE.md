@@ -82,7 +82,7 @@
 | `model` | 必填。下拉选择真实的本地 Ollama 模型（如 `qwen3:latest`）；扩展会记住上次的选择 |
 | `persona` | 人设下拉：`none` 表示不注入身份系统提示词（裸模型），其余选 `personas/prompt/`、`personas/writing/` 目录内的人设 txt（文件名即选项名，如 `提示词助手` / `写作助手`） |
 | `prompt_profile` | 模型提示词规则下拉：`auto` 走默认规则，`none` 跳过规则层，其余选 `models/` 目录内的规则套；仅提示词身份生效 |
-| `mode` | 创作模式（下拉固定枚举）：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `bilingual` 中英对照 / `negative` 负向补全 / `none` 无模式指令 |
+| `mode` | 创作模式（下拉固定枚举）：`draft` 起草补全 / `polish` 润色 / `trim` 精简 / `continue` 续写 / `fresh` 空白直出 / `bilingual` 中英对照 / `negative` 负向补全 / `none` 无模式指令 |
 | `task` | 这次想让它干什么（一句话要求，可留空） |
 | `backend_url` / `token` | 同前，一般留空 |
 | `genre` / `style` | 写作类题材 / 文风下拉，选对应套件；仅写作身份有意义，留空（`不指定`）表示不叠加该层 |

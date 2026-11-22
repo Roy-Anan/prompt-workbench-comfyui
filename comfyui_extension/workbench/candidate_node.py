@@ -28,12 +28,14 @@ from typing import Any
 
 import backend_client
 
-MODES = ["draft", "polish", "trim", "bilingual", "negative", "none"]
+MODES = ["draft", "polish", "trim", "continue", "fresh", "bilingual", "negative", "none"]
 
 MODE_LABELS = {
     "draft": "起草补全",
     "polish": "润色",
     "trim": "精简",
+    "continue": "续写",
+    "fresh": "空白直出",
     "bilingual": "中英对照",
     "negative": "负向补全",
     "none": "无",

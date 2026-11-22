@@ -96,6 +96,26 @@ def test_user_message_keeps_locked_fragments():
     assert "原样保留" in message
 
 
+def test_user_message_fresh_skips_existing_prompt():
+    working = [{"role": "positive", "text": "白发少女"}, {"role": "negative", "text": "模糊"}]
+    message = workflow_api._user_message(
+        working, None, "fresh", None, None, "positive-in", "negative-in"
+    )
+    assert "当前工作流现有 Prompt" not in message
+    assert "白发少女" not in message
+    assert "模糊" not in message
+    assert "positive-in" not in message
+    assert "negative-in" not in message
+    assert "从零生成" in message
+
+
+def test_user_message_continue_keeps_existing_prompt():
+    working = [{"role": "positive", "text": "白发少女"}]
+    message = workflow_api._user_message(working, None, "continue")
+    assert "白发少女" in message
+    assert "续写" in message or "继续延展" in message
+
+
 def test_clean_locked_fragments_normalizes():
     cleaned = workflow_api._clean_locked_fragments(
         ["  红色瞳孔  ", "", "红色瞳孔", "校服"]

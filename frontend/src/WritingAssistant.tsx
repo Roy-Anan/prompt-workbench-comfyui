@@ -11,6 +11,8 @@ const CANDIDATE_MODE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "draft", label: "起草" },
   { value: "polish", label: "润色" },
   { value: "trim", label: "精简" },
+  { value: "continue", label: "续写" },
+  { value: "fresh", label: "空白直出" },
   { value: "bilingual", label: "中英对照" },
 ];
 
