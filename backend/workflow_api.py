@@ -18,6 +18,7 @@ import prompt_personas
 import rule_compare
 import rule_prompt
 import rule_store
+import runtime_log
 from workflow_service import WorkflowError, WorkflowStore
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 system_router = APIRouter(prefix="/api/system", tags=["system"])
@@ -834,6 +835,11 @@ def _generate_candidate(
         timeout=CANDIDATE_LLM_TIMEOUT,
     )
     if not result["ok"]:
+        runtime_log.logger().error(
+            "候选生成 LLM 调用失败 model=%s: %s",
+            payload.model,
+            result["error"],
+        )
         raise HTTPException(
             status_code=502,
             detail={"online": False, "error": result["error"]},
@@ -842,6 +848,9 @@ def _generate_candidate(
     cleaned = _clean_candidate_content(result["content"])
     cleaned = _dedupe_prompt_tags(cleaned)
     if not cleaned:
+        runtime_log.logger().warning(
+            "候选生成模型返回空内容 model=%s", payload.model
+        )
         raise HTTPException(
             status_code=502,
             detail={"online": True, "error": "模型返回内容为空，未生成候选。"},
